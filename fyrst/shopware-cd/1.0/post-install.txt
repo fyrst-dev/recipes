@@ -1,18 +1,30 @@
   * <fg=blue>fyrst/shopware-cd</>
-    Flex copied CI, Compose, and deploy files into the shop root
+    Flex copied CD files into the shop root: CI,
+    <comment>deploy/</comment> (including CD Compose), <comment>.dockerignore</comment>,
+    and <comment>.env.example</comment>
     (same idea as <comment>shopware/docker</comment> copying <comment>docker/Dockerfile</comment>).
+
+    <comment>compose.yaml</comment>, <comment>.gitignore</comment>, and
+    <comment>.shopware-project.yaml</comment> are owned by
+    <comment>shopware-cli project create</comment> / the CLI — not this recipe.
+
+    Local: <comment>shopware-cli project dev</comment> and the CLI-managed
+    shop-root <comment>compose.yaml</comment>.
+    VPS/CD: files under <comment>deploy/</comment>
+    (<comment>deploy/compose.yaml</comment>, <comment>deploy/compose.prod.yaml</comment>,
+    <comment>deploy/compose.vps.yaml</comment>).
 
     You MUST require <comment>shopware/docker</comment> in the same Composer command as
     this package. That recipe copies <comment>docker/Dockerfile</comment>, which CI and
-    Compose require (default <comment>DOCKERFILE=docker/Dockerfile</comment>). This recipe
+    CD Compose require (default <comment>DOCKERFILE=docker/Dockerfile</comment>). This recipe
     does not ship a root Dockerfile. A missing <comment>docker/Dockerfile</comment>
     means <comment>shopware/docker</comment> was skipped.
 
     Copy <comment>.env.example</comment> → <comment>.env</comment> yourself (Flex never writes <comment>.env</comment>).
     Commit the copied files; <comment>vendor/</comment> is gitignored.
 
-    shopware-cli loads <comment>.shopware-project.yaml</comment> (and still accepts
-    <comment>.shopware-project.yml</comment>). GitHub Actions picks up
+    shopware-cli loads <comment>.shopware-project.yaml</comment> from create (and still
+    accepts <comment>.shopware-project.yml</comment>). GitHub Actions picks up
     <comment>.github/workflows/cd.yaml</comment>. GitLab still defaults to
     <comment>.gitlab-ci.yml</comment>: set Settings → CI/CD → CI/CD configuration file
     to <comment>.gitlab-ci.yaml</comment> (or copy/symlink that name).
