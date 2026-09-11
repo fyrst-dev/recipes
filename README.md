@@ -80,7 +80,7 @@ composer recipes:update fyrst/shopware-cd
 
 | Path | Role |
 |---|---|
-| `fyrst/shopware-cd/1.0/` | Current Flex recipe (copied from [shopware-cd-template](https://github.com/fyrst-dev/shopware-cd-template/tree/main/flex-recipe/fyrst/shopware-cd/1.0)) |
+| `fyrst/shopware-cd/1.0/` | Current Flex recipe for Packagist package `fyrst/shopware-cd` (overlays live only here; Packagist package repo is https://github.com/fyrst-dev/shopware-cd) |
 | `.github/workflows/flex-update.yml` | Compiles recipes → `flex/main` |
 | `.github/workflows/flex-cleanup.yml` | Deletes Flex PR test refs |
 
