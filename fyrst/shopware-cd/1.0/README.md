@@ -20,6 +20,8 @@ docker compose -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/comp
 
 (`deploy/vps-release.sh` runs that from the shop root.)
 
-VPS runtime DB + bind-mount pull (no object storage): `deploy/sync-runtime.sh` — see `deploy/sync-runtime.md`. Uploads live under `SHOPWARE_DATA_ROOT`.
+VPS runtime DB + bind-mount pull (no object storage): `deploy/sync-runtime.sh` — see `deploy/sync-runtime.md`. Uploads live under `SHOPWARE_DATA_ROOT` (`/var/lib/shopware/data/${SHOPWARE_SHOP_ID}/${SHOPWARE_DEPLOY_ENV}`). Compose project name is `COMPOSE_PROJECT_NAME` (unique on the host; no hardcoded `name: shopware`).
 
-Local `shopware-cli project dev` pull (rsync path remap, no DB): `deploy/sync-runtime-local.sh`.
+Local `shopware-cli project dev` pull (rsync path remap, no DB): `deploy/sync-runtime-local.sh` (derives remote `/var/lib/shopware/data/${SHOPWARE_SHOP_ID}/live`).
+
+After changes here, shops run `composer recipes:update fyrst/shopware-cd` and merge new `.env.example` keys.
