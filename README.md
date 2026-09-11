@@ -57,7 +57,7 @@ composer require shopware/docker shopware/deployment-helper fyrst/shopware-cd
 
 `shopware-cli project create` owns `compose.yaml`, `.gitignore`, and `.shopware-project.yaml`. This recipe does **not** copy them.
 
-- **Local:** `shopware-cli project dev` and the CLI-managed shop-root `compose.yaml`.
+- **Local:** `shopware-cli project dev` and the CLI-managed shop-root `compose.yaml`. Live → laptop uploads: `deploy/sync-runtime-local.sh`.
 - **VPS/CD:** files under `deploy/` (`deploy/compose.yaml`, `deploy/compose.prod.yaml`, `deploy/compose.vps.yaml`, `deploy/sync-runtime.sh`).
 
 Flex copies CI, `deploy/` (including CD Compose), `.dockerignore`, and `.env.example` into the shop root. Copy `.env.example` → `.env` yourself (Flex never writes `.env`). Commit the copied files; `vendor/` stays gitignored.
