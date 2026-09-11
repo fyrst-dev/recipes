@@ -53,6 +53,8 @@ cd <shop>
 composer require shopware/docker shopware/deployment-helper fyrst/shopware-cd
 ```
 
+`shopware/docker` is required in that same command: it copies `docker/Dockerfile`, which CI and Compose default to. This recipe does not ship a root Dockerfile. A missing `docker/Dockerfile` means `shopware/docker` was skipped.
+
 Flex copies CI, Compose, and deploy files into the shop root. Copy `.env.example` → `.env` yourself (Flex never writes `.env`). Commit the copied files; `vendor/` stays gitignored.
 
 ## Update recipes

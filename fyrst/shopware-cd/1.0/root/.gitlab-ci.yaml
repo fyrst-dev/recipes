@@ -1,7 +1,9 @@
 # fyrst.dev Shopware CD — GitLab CI
 #
 # Stages (same as .github/workflows/cd.yaml): build → push extra tags → deploy.
-# shopware-cli runs only inside the Dockerfile (shopware-cli image), not on the runner.
+# shopware-cli runs only inside docker/Dockerfile (shopware-cli image), not on the runner.
+# That file comes from shopware/docker (same composer require). Missing it means
+# shopware/docker was skipped — this recipe does not ship a root Dockerfile.
 #
 # Copied into shops by the Symfony Flex recipe (`copy-from-recipe` → shop root).
 # Workflow rules require `bin/console` so this Packagist library never runs
@@ -22,7 +24,7 @@
 #   REGISTRY_IMAGE            e.g. ghcr.io/fyrst-dev/shop-name
 #   REGISTRY_USERNAME
 #   REGISTRY_PASSWORD
-#   DOCKERFILE                default Dockerfile (set docker/Dockerfile for Flex)
+#   DOCKERFILE                default docker/Dockerfile (from shopware/docker)
 #
 # Compose / VPS (DEPLOY_TARGET empty or "compose"):
 #   SSH_PRIVATE_KEY          file or masked variable (PEM)
@@ -37,7 +39,7 @@
 #   SMOKE_URL
 #
 # Runner: build uses Docker-in-Docker (privileged). Swap to kaniko/buildah
-# if the runner cannot run dind — keep the same Dockerfile and tags.
+# if the runner cannot run dind — keep docker/Dockerfile and the same tags.
 
 workflow:
     rules:
@@ -65,7 +67,7 @@ variables:
     DOCKER_TLS_CERTDIR: "/certs"
     DOCKER_BUILDKIT: "1"
     PHP_VERSION: "8.3"
-    DOCKERFILE: "Dockerfile"
+    DOCKERFILE: "docker/Dockerfile"
 
 .registry_env:
     before_script:
@@ -75,7 +77,7 @@ variables:
             export IMAGE="${REGISTRY_IMAGE:-${CI_REGISTRY_IMAGE}}"
             export REGISTRY_USERNAME="${REGISTRY_USERNAME:-${CI_REGISTRY_USER:-}}"
             export REGISTRY_PASSWORD="${REGISTRY_PASSWORD:-${CI_REGISTRY_PASSWORD:-}}"
-            export DOCKERFILE="${DOCKERFILE:-Dockerfile}"
+            export DOCKERFILE="${DOCKERFILE:-docker/Dockerfile}"
             export SHOPWARE_PACKAGES_TOKEN="${SHOPWARE_PACKAGES_TOKEN:-}"
             : "${IMAGE:?Set REGISTRY_IMAGE or use GitLab Container Registry}"
 
@@ -92,6 +94,16 @@ build:
         -   if: $CI_COMMIT_TAG
     before_script:
         -   !reference [.registry_env, before_script]
+        -   |
+            set -eu
+            if [ ! -f "$DOCKERFILE" ]; then
+                echo "Missing ${DOCKERFILE}." >&2
+                if [ "$DOCKERFILE" = "docker/Dockerfile" ]; then
+                    echo "fyrst/shopware-cd requires shopware/docker (same composer require), which copies docker/Dockerfile." >&2
+                    echo "A missing docker/Dockerfile means shopware/docker was skipped." >&2
+                fi
+                exit 1
+            fi
         -   docker info
         -   |
             if [ -n "${REGISTRY:-}" ] && [ "${CI_PIPELINE_SOURCE}" != "merge_request_event" ]; then

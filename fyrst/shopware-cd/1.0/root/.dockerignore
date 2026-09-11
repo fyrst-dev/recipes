@@ -1,5 +1,7 @@
-# Overlay .dockerignore — keep the Shopware project, drop secrets and
-# paths that shopware-cli project ci rebuilds or that must never enter the image.
+# Overlay .dockerignore for the shop-root build context used with
+# docker/Dockerfile (from shopware/docker). Keep the Shopware project, drop
+# secrets and paths that shopware-cli project ci rebuilds or that must never
+# enter the image.
 
 .git
 .gitattributes

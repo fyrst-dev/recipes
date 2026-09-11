@@ -23,7 +23,8 @@ x-shopware: &shopware
     image: ${IMAGE:?Set IMAGE in .env}:${IMAGE_TAG:-latest}
     build:
         context: .
-        dockerfile: ${DOCKERFILE:-Dockerfile}
+        # shopware/docker copies docker/Dockerfile. Missing it means that package was skipped.
+        dockerfile: ${DOCKERFILE:-docker/Dockerfile}
         args:
             PHP_VERSION: ${PHP_VERSION:-8.3}
     env_file:

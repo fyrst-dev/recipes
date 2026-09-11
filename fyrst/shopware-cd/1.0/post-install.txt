@@ -2,9 +2,11 @@
     Flex copied CI, Compose, and deploy files into the shop root
     (same idea as <comment>shopware/docker</comment> copying <comment>docker/Dockerfile</comment>).
 
-    Prefer the Flex Dockerfile at <comment>docker/Dockerfile</comment> when you also required
-    <comment>shopware/docker</comment>. Point CI at it with <comment>DOCKERFILE=docker/Dockerfile</comment>.
-    The root <comment>Dockerfile</comment> from this recipe is a fallback only.
+    You MUST require <comment>shopware/docker</comment> in the same Composer command as
+    this package. That recipe copies <comment>docker/Dockerfile</comment>, which CI and
+    Compose require (default <comment>DOCKERFILE=docker/Dockerfile</comment>). This recipe
+    does not ship a root Dockerfile. A missing <comment>docker/Dockerfile</comment>
+    means <comment>shopware/docker</comment> was skipped.
 
     Copy <comment>.env.example</comment> → <comment>.env</comment> yourself (Flex never writes <comment>.env</comment>).
     Commit the copied files; <comment>vendor/</comment> is gitignored.
