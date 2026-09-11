@@ -3,8 +3,10 @@
 #
 # Unidirectional pull: run this on the CONSUMER (staging, playground, dev) with
 # `--from <source>`. Database + bind-mounted upload trees under
-# SHOPWARE_DATA_ROOT stay on the hosts (SQL dump + rsync). Object storage
-# (S3 and similar) is out of scope for this VPS path.
+# SHOPWARE_DATA_ROOT stay on the hosts (SQL dump + rsync). Default root:
+#   $SHOPWARE_DATA_BASE/$SHOPWARE_SHOP_ID/$SHOPWARE_DEPLOY_ENV
+#   e.g. /var/lib/shopware/data/acme/live
+# Object storage (S3 and similar) is out of scope for this VPS path.
 #
 # Does not call deploy/vps-release.sh and does not change release behaviour.
 #
@@ -43,11 +45,12 @@ SKIP_VOLUMES=0
 SOURCE_IS_LOCAL=1
 SSH_TARGET=""
 REMOTE_PATH=""
-PROJECT_NAME="shopware"
+PROJECT_NAME=""
 ARCHIVE_IMAGE="${SYNC_ARCHIVE_IMAGE:-alpine:3.20}"
-DEFAULT_DATA_ROOT="/var/lib/shopware/data"
+DEFAULT_DATA_BASE="/var/lib/shopware/data"
 DATA_ROOT=""
 REMOTE_DATA_ROOT=""
+SOURCE_ENV=""
 STOPPED_APP=()
 WANT_DB=0
 WANT_VOLUMES=()
@@ -80,10 +83,17 @@ Options:
 
 Environment (no secrets in this script; see deploy/sync.env.example):
   SYNC_ENV               Consumer name. restore/sync refuse SYNC_ENV=live
-                         (also refused when the checkout directory is named live)
-  SHOPWARE_DATA_ROOT     Bind-mount root (default /var/lib/shopware/data)
-  SYNC_DATA_ROOT         Override for this host (else SHOPWARE_DATA_ROOT)
-  SYNC_REMOTE_DATA_ROOT  Bind-mount root on the SSH source
+                         and SHOPWARE_DEPLOY_ENV=live (also refused when the
+                         checkout directory is named live)
+  SHOPWARE_SHOP_ID       Stable shop slug (required on VPS)
+  SHOPWARE_DEPLOY_ENV    This host's stack role (live|staging|playground|dev)
+  SHOPWARE_DATA_BASE     Prefix helper (default /var/lib/shopware/data)
+  SHOPWARE_DATA_ROOT     Bind-mount root. Unset →
+                         $SHOPWARE_DATA_BASE/$SHOPWARE_SHOP_ID/$SHOPWARE_DEPLOY_ENV
+  SYNC_DATA_ROOT         Override for this host (else SHOPWARE_DATA_ROOT / derived)
+  SYNC_REMOTE_DATA_ROOT  Bind-mount root on the SSH source. Unset →
+                         $SHOPWARE_DATA_BASE/$SHOPWARE_SHOP_ID/$SYNC_SOURCE_ENV
+  SYNC_SOURCE_ENV        Remote env directory (default: --from alias, else live)
   SYNC_SSH_HOST          Source hostname (default: the --from alias, which
                          may be an ~/.ssh/config Host)
   SYNC_SSH_USER          SSH user
@@ -94,14 +104,15 @@ Environment (no secrets in this script; see deploy/sync.env.example):
   SYNC_POST_RESTORE_CMD  Optional shell command after restore (non-fatal)
   SYNC_ARCHIVE_IMAGE     Image used to tar trees if rsync cannot (default alpine:3.20)
   COMPOSE_DIR            Shop root (default: parent of deploy/)
-  COMPOSE_PROJECT_NAME   Overrides compose project (default: name in compose)
+  COMPOSE_PROJECT_NAME   Unique on this Docker host. Unset →
+                         ${SHOPWARE_SHOP_ID}-${SHOPWARE_DEPLOY_ENV}
 
 Per-alias overrides (example --from live): SYNC_LIVE_SSH_HOST, SYNC_LIVE_SSH_USER,
 SYNC_LIVE_SSH_PORT, SYNC_LIVE_SSH_KEY, SYNC_LIVE_REMOTE_PATH, SYNC_LIVE_DATA_ROOT.
 
 Cron (run on staging, pull from live):
 
-  15 2 * * * cd /opt/shopware/staging && bash deploy/sync-runtime.sh sync --from live --data all
+  15 2 * * * cd /opt/shopware/acme-staging && bash deploy/sync-runtime.sh sync --from live --data all
 
 Compose files (same as deploy/vps-release.sh, from shop root):
   docker compose -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/compose.vps.yaml
@@ -190,6 +201,13 @@ PRESET_SYNC_ENV="${SYNC_ENV:-}"
 PRESET_IMAGE="${IMAGE:-}"
 PRESET_IMAGE_TAG="${IMAGE_TAG:-}"
 PRESET_SYNC_DATA_ROOT="${SYNC_DATA_ROOT:-}"
+PRESET_SHOPWARE_SHOP_ID="${SHOPWARE_SHOP_ID:-}"
+PRESET_SHOPWARE_DEPLOY_ENV="${SHOPWARE_DEPLOY_ENV:-}"
+PRESET_COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-}"
+PRESET_SHOPWARE_DATA_ROOT="${SHOPWARE_DATA_ROOT:-}"
+PRESET_SHOPWARE_DATA_BASE="${SHOPWARE_DATA_BASE:-}"
+PRESET_SYNC_SOURCE_ENV="${SYNC_SOURCE_ENV:-}"
+PRESET_SYNC_REMOTE_DATA_ROOT="${SYNC_REMOTE_DATA_ROOT:-}"
 
 load_env_file() {
   local f=$1
@@ -208,10 +226,89 @@ load_env_file deploy/sync.env
 SYNC_ENV="${PRESET_SYNC_ENV:-${SYNC_ENV:-}}"
 IMAGE="${PRESET_IMAGE:-${IMAGE:-}}"
 IMAGE_TAG="${PRESET_IMAGE_TAG:-${IMAGE_TAG:-latest}}"
+SHOPWARE_SHOP_ID="${PRESET_SHOPWARE_SHOP_ID:-${SHOPWARE_SHOP_ID:-}}"
+SHOPWARE_DEPLOY_ENV="${PRESET_SHOPWARE_DEPLOY_ENV:-${SHOPWARE_DEPLOY_ENV:-}}"
+COMPOSE_PROJECT_NAME="${PRESET_COMPOSE_PROJECT_NAME:-${COMPOSE_PROJECT_NAME:-}}"
+SHOPWARE_DATA_ROOT="${PRESET_SHOPWARE_DATA_ROOT:-${SHOPWARE_DATA_ROOT:-}}"
+SHOPWARE_DATA_BASE="${PRESET_SHOPWARE_DATA_BASE:-${SHOPWARE_DATA_BASE:-$DEFAULT_DATA_BASE}}"
+SYNC_SOURCE_ENV="${PRESET_SYNC_SOURCE_ENV:-${SYNC_SOURCE_ENV:-}}"
+SYNC_REMOTE_DATA_ROOT="${PRESET_SYNC_REMOTE_DATA_ROOT:-${SYNC_REMOTE_DATA_ROOT:-}}"
 export IMAGE IMAGE_TAG
 
 SNAPSHOT_DIR="${SNAPSHOT_DIR:-${SYNC_SNAPSHOT_DIR:-${COMPOSE_DIR}/var/runtime-sync}}"
-DATA_ROOT="${PRESET_SYNC_DATA_ROOT:-${SYNC_DATA_ROOT:-${SHOPWARE_DATA_ROOT:-$DEFAULT_DATA_ROOT}}}"
+
+require_shop_id() {
+  if [[ -z "${SHOPWARE_SHOP_ID:-}" ]]; then
+    die "SHOPWARE_SHOP_ID is required on the VPS (stable shop slug, same on live + staging + laptop). Set it in shop-root .env."
+  fi
+}
+
+derived_data_root() {
+  local shop_id=$1
+  local deploy_env=$2
+  printf '%s/%s/%s\n' "${SHOPWARE_DATA_BASE}" "$shop_id" "$deploy_env"
+}
+
+source_env_for_remote() {
+  if [[ -n "${SYNC_SOURCE_ENV:-}" ]]; then
+    printf '%s\n' "$SYNC_SOURCE_ENV"
+  elif [[ -n "${FROM_LC:-}" && "$FROM_LC" != "local" && "$FROM_LC" != "this" ]]; then
+    printf '%s\n' "$FROM_LC"
+  else
+    printf '%s\n' "live"
+  fi
+}
+
+derive_local_data_root() {
+  if [[ -n "${PRESET_SYNC_DATA_ROOT:-}" ]]; then
+    DATA_ROOT=$PRESET_SYNC_DATA_ROOT
+    return
+  fi
+  if [[ -n "${SYNC_DATA_ROOT:-}" ]]; then
+    DATA_ROOT=$SYNC_DATA_ROOT
+    return
+  fi
+  if [[ -n "${SHOPWARE_DATA_ROOT:-}" ]]; then
+    DATA_ROOT=$SHOPWARE_DATA_ROOT
+    return
+  fi
+  require_shop_id
+  if [[ -z "${SHOPWARE_DEPLOY_ENV:-}" ]]; then
+    die "SHOPWARE_DEPLOY_ENV is required to derive SHOPWARE_DATA_ROOT (live|staging|playground|dev). Set it in .env, or set SHOPWARE_DATA_ROOT / SYNC_DATA_ROOT explicitly."
+  fi
+  DATA_ROOT="$(derived_data_root "$SHOPWARE_SHOP_ID" "$SHOPWARE_DEPLOY_ENV")"
+  SHOPWARE_DATA_ROOT=$DATA_ROOT
+  export SHOPWARE_DATA_ROOT
+  log "SHOPWARE_DATA_ROOT unset; derived ${DATA_ROOT}"
+}
+
+derive_compose_project_name() {
+  if [[ -n "${COMPOSE_PROJECT_NAME:-}" ]]; then
+    PROJECT_NAME=$COMPOSE_PROJECT_NAME
+    export COMPOSE_PROJECT_NAME
+    return
+  fi
+  if [[ -n "${SHOPWARE_SHOP_ID:-}" && -n "${SHOPWARE_DEPLOY_ENV:-}" ]]; then
+    COMPOSE_PROJECT_NAME="${SHOPWARE_SHOP_ID}-${SHOPWARE_DEPLOY_ENV}"
+    PROJECT_NAME=$COMPOSE_PROJECT_NAME
+    export COMPOSE_PROJECT_NAME
+    log "COMPOSE_PROJECT_NAME unset; derived ${COMPOSE_PROJECT_NAME}"
+    return
+  fi
+  local n=""
+  n="$("${COMPOSE[@]}" config 2>/dev/null | awk '/^name:/{print $2; exit}' || true)"
+  n="$(printf '%s' "$n" | tr -d '\r' | tr -d '"')"
+  if [[ -n "$n" ]]; then
+    PROJECT_NAME=$n
+    COMPOSE_PROJECT_NAME=$n
+    export COMPOSE_PROJECT_NAME
+    return
+  fi
+  die "Set COMPOSE_PROJECT_NAME in .env (must be unique on this Docker host), or set SHOPWARE_SHOP_ID and SHOPWARE_DEPLOY_ENV to derive \${SHOPWARE_SHOP_ID}-\${SHOPWARE_DEPLOY_ENV}."
+}
+
+require_shop_id
+derive_local_data_root
 
 split_csv() {
   local csv=$1
@@ -289,11 +386,13 @@ normalize_data "$DATA_SPEC"
 lower_s() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
 
 SYNC_ENV_LC="$(lower_s "${SYNC_ENV:-}")"
+DEPLOY_ENV_LC="$(lower_s "${SHOPWARE_DEPLOY_ENV:-}")"
 SHOP_BASE_LC="$(lower_s "$(basename "$COMPOSE_DIR")")"
 HOST_SHORT_LC="$(lower_s "$(hostname -s 2>/dev/null || hostname)")"
 
 is_live_consumer() {
   [[ "$SYNC_ENV_LC" == "live" ]] && return 0
+  [[ "$DEPLOY_ENV_LC" == "live" ]] && return 0
   [[ "$SHOP_BASE_LC" == "live" ]] && return 0
   [[ "$HOST_SHORT_LC" == "live" ]] && return 0
   return 1
@@ -301,7 +400,7 @@ is_live_consumer() {
 
 assert_not_live_restore() {
   if is_live_consumer; then
-    die "Refusing restore/sync on a live host (SYNC_ENV=${SYNC_ENV:-unset}, checkout=$(basename "$COMPOSE_DIR"), hostname=${HOST_SHORT_LC}). Runtime sync is pull-only onto staging/playground/dev."
+    die "Refusing restore/sync on a live host (SYNC_ENV=${SYNC_ENV:-unset}, SHOPWARE_DEPLOY_ENV=${SHOPWARE_DEPLOY_ENV:-unset}, checkout=$(basename "$COMPOSE_DIR"), hostname=${HOST_SHORT_LC}). Runtime sync is pull-only onto staging/playground/dev."
   fi
 }
 
@@ -385,6 +484,8 @@ COMPOSE=(
 )
 
 COMPOSE_STR="docker compose -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/compose.vps.yaml"
+
+derive_compose_project_name
 
 require_cmd() {
   local c=$1
@@ -586,23 +687,13 @@ ensure_image_for_compose() {
 }
 
 resolve_project_name() {
-  local n=""
-  if [[ -n "${COMPOSE_PROJECT_NAME:-}" ]]; then
-    PROJECT_NAME=$COMPOSE_PROJECT_NAME
-    return
-  fi
-  n="$("${COMPOSE[@]}" config 2>/dev/null | awk '/^name:/{print $2; exit}' || true)"
-  if [[ -n "$n" ]]; then
-    PROJECT_NAME=$n
-  else
-    PROJECT_NAME="shopware"
-  fi
+  derive_compose_project_name
 }
 
 resolve_remote_project_name() {
   local n=""
   n="$(remote_bash "${COMPOSE_STR} config 2>/dev/null | awk '/^name:/{print \$2; exit}'" || true)"
-  n="$(printf '%s' "$n" | tr -d '\r' | tail -n 1)"
+  n="$(printf '%s' "$n" | tr -d '\r' | tr -d '"' | tail -n 1)"
   if [[ -n "$n" ]]; then
     PROJECT_NAME=$n
   else
@@ -629,23 +720,28 @@ resolve_remote_data_root() {
   if [[ -n "${REMOTE_DATA_ROOT}" ]]; then
     return
   fi
+  SOURCE_ENV="$(source_env_for_remote)"
   if [[ "$DRY_RUN" -eq 1 ]]; then
-    REMOTE_DATA_ROOT=$DEFAULT_DATA_ROOT
-    log "DRY-RUN remote SHOPWARE_DATA_ROOT default ${REMOTE_DATA_ROOT} (probe skipped)"
+    require_shop_id
+    REMOTE_DATA_ROOT="$(derived_data_root "$SHOPWARE_SHOP_ID" "$SOURCE_ENV")"
+    log "DRY-RUN remote SHOPWARE_DATA_ROOT derived ${REMOTE_DATA_ROOT} (probe skipped)"
     return
   fi
   local probed="" remote_printf
   # Expand SYNC_DATA_ROOT / SHOPWARE_DATA_ROOT on the remote after it sources .env.
+  # Empty → derive from this host's SHOPWARE_SHOP_ID + SYNC_SOURCE_ENV/--from.
   # shellcheck disable=SC2016
-  remote_printf='printf %s "${SYNC_DATA_ROOT:-${SHOPWARE_DATA_ROOT:-/var/lib/shopware/data}}"'
+  remote_printf='printf %s "${SYNC_DATA_ROOT:-${SHOPWARE_DATA_ROOT:-}}"'
   probed="$(remote_bash "$remote_printf" || true)"
   probed="$(printf '%s' "$probed" | tr -d '\r' | tail -n 1)"
   if [[ -n "$probed" ]]; then
     REMOTE_DATA_ROOT=$probed
-  else
-    REMOTE_DATA_ROOT=$DEFAULT_DATA_ROOT
+    log "Remote bind-mount root: ${REMOTE_DATA_ROOT}"
+    return
   fi
-  log "Remote bind-mount root: ${REMOTE_DATA_ROOT}"
+  require_shop_id
+  REMOTE_DATA_ROOT="$(derived_data_root "$SHOPWARE_SHOP_ID" "$SOURCE_ENV")"
+  log "Remote bind-mount root derived: ${REMOTE_DATA_ROOT} (shop=${SHOPWARE_SHOP_ID} env=${SOURCE_ENV})"
 }
 
 chown_data_dir() {
@@ -1302,7 +1398,7 @@ ensure_image_for_compose
 ensure_snapshot_dir
 lock_sync
 
-log "Runtime data ${COMMAND}  from=${FROM}  data=$(data_csv_effective)  env=${SYNC_ENV:-unset}  data_root=${DATA_ROOT}  dry-run=${DRY_RUN}"
+log "Runtime data ${COMMAND}  from=${FROM}  data=$(data_csv_effective)  shop=${SHOPWARE_SHOP_ID}  deploy_env=${SHOPWARE_DEPLOY_ENV:-unset}  project=${COMPOSE_PROJECT_NAME:-}  env=${SYNC_ENV:-unset}  data_root=${DATA_ROOT}  dry-run=${DRY_RUN}"
 if [[ "$SOURCE_IS_LOCAL" -eq 0 ]]; then
   log "SSH ${SSH_TARGET} port ${SYNC_SSH_PORT:-22}  remote=${REMOTE_PATH}"
 fi

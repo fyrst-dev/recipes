@@ -5,6 +5,16 @@
 #
 # CD/VPS stack lives here under `deploy/`. Shop-root `compose.yaml` is owned by
 # `shopware-cli project create` (`shopware-cli project dev`) — not this recipe.
+#
+# Naming (shop-root `.env`; same formula on live + staging + laptop):
+#   SHOPWARE_SHOP_ID       stable slug (e.g. acme) — required on VPS
+#   SHOPWARE_DEPLOY_ENV    live | staging | playground | dev — required on VPS
+#   COMPOSE_PROJECT_NAME   unique on the Docker host; default acme-live
+#   SHOPWARE_DATA_ROOT     /var/lib/shopware/data/${SHOPWARE_SHOP_ID}/${SHOPWARE_DEPLOY_ENV}
+# Compose interpolates COMPOSE_PROJECT_NAME and SHOPWARE_DATA_ROOT only (set
+# those as concrete values — `.env` does not nest ${A}/${B} in all versions).
+# After recipe changes: `composer recipes:update fyrst/shopware-cd` then merge
+# new keys from `.env.example` into each shop's `.env`.
 
 ## Model
 
@@ -19,19 +29,47 @@
 2. Checkout this shop repo (read-only deploy key) to a path such as `/opt/shopware/<shop>`.
    That path is `VPS_PATH` in CI.
 3. Copy `.env.example` → `.env` and fill runtime secrets. `chmod 600 .env`.
+   Set **concrete** values (Compose `.env` does not reliably expand nested `${VAR}`):
+
+   ```bash
+   SHOPWARE_SHOP_ID=acme
+   SHOPWARE_DEPLOY_ENV=live          # this host's role
+   COMPOSE_PROJECT_NAME=acme-live    # must be unique on this Docker host
+   SHOPWARE_DATA_ROOT=/var/lib/shopware/data/acme/live
+   ```
+
+   `deploy/vps-release.sh` and the sync scripts derive `COMPOSE_PROJECT_NAME` /
+   `SHOPWARE_DATA_ROOT` from shop id + deploy env when those two are unset.
 4. Create `.env.prod` (may be empty) so `deploy/compose.prod.yaml` can mount it.
 5. Set `IMAGE` to the registry repository CI pushes (example: `ghcr.io/fyrst-dev/shop-name`).
 6. Create the runtime upload bind mounts (uid 82 = www-data in docker-base):
 
    ```bash
-   # SHOPWARE_DATA_ROOT from .env (default /var/lib/shopware/data)
-   mkdir -p /var/lib/shopware/data/{files,media,thumbnail,theme,sitemap}
-   chown -R 82:82 /var/lib/shopware/data
+   # SHOPWARE_DATA_ROOT from .env — unique per shop + env
+   mkdir -p "${SHOPWARE_DATA_ROOT}"/{files,media,thumbnail,theme,sitemap}
+   chown -R 82:82 "${SHOPWARE_DATA_ROOT}"
+   # e.g. /var/lib/shopware/data/acme/live/{files,media,thumbnail,theme,sitemap}
    ```
+
+   `mysql_data` / `redis_data` stay named volumes (prefixed by `COMPOSE_PROJECT_NAME`).
 
 7. `docker login` to that registry on the VPS (or use a credential helper / `~/.docker/config.json`).
 8. Put a reverse proxy in front of `HTTP_PORT` (TLS). Do not expose MySQL.
 9. Store the previous image tag for rollback (the release script writes `.deployed-tag` / `.previous-tag`).
+
+## Several shops / live+staging on the same VPS
+
+`SHOPWARE_SHOP_ID` is the same slug everywhere for one shop. `SHOPWARE_DEPLOY_ENV` and `COMPOSE_PROJECT_NAME` differ per stack. Checkout path (`VPS_PATH`) is independent of the data root.
+
+| Stack | `COMPOSE_PROJECT_NAME` | `SHOPWARE_DATA_ROOT` |
+| --- | --- | --- |
+| acme live | `acme-live` | `/var/lib/shopware/data/acme/live` |
+| acme staging | `acme-staging` | `/var/lib/shopware/data/acme/staging` |
+| widgets live | `widgets-live` | `/var/lib/shopware/data/widgets/live` |
+
+Named volumes become `acme-live_mysql_data`, `acme-staging_mysql_data`, … — unique because Compose prefixes them with the project name. Bind-mount trees do not overlap.
+
+`deploy/compose.yaml` has no hardcoded `name: shopware`.
 
 ## CD sequence (what CI runs)
 
@@ -73,7 +111,7 @@ docker compose -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/comp
 
 - `deploy/compose.yaml` — CD/VPS image-based stack
 - `deploy/compose.prod.yaml` — production overrides
-`deploy/vps-release.sh` sources shop-root `.env` then runs that command from `COMPOSE_DIR` (shop root).
+`deploy/vps-release.sh` sources shop-root `.env`, derives `COMPOSE_PROJECT_NAME` / `SHOPWARE_DATA_ROOT` when unset, then runs that command from `COMPOSE_DIR` (shop root).
 
 Local development uses `shopware-cli project create`'s shop-root `compose.yaml` with `shopware-cli project dev`. This recipe does not copy that file.
 
@@ -107,25 +145,37 @@ Typical: `SSH_PRIVATE_KEY`, `VPS_HOST`, `VPS_USER`, `VPS_PATH`, `SSH_KNOWN_HOSTS
 
 Pull **database + bind-mounted upload trees** (`media`, `files`, `thumbnail`, `theme`, `sitemap` under `SHOPWARE_DATA_ROOT`) from another VPS onto this one (usually live → staging). SSH + `mysqldump`/`mariadb-dump` + **rsync of those host directories**. Object storage (S3 and similar) is out of scope. Runtime data stays out of git and out of the app image.
 
+When `SHOPWARE_DATA_ROOT` / `SYNC_DATA_ROOT` are unset, `deploy/sync-runtime.sh` derives
+
+`$SHOPWARE_DATA_BASE/$SHOPWARE_SHOP_ID/$SHOPWARE_DEPLOY_ENV`
+
+(`SHOPWARE_DATA_BASE` default `/var/lib/shopware/data`). `--from live` remote root is `$BASE/$SHOPWARE_SHOP_ID/live` (or `SYNC_SOURCE_ENV`) unless `SYNC_REMOTE_DATA_ROOT` is set. Missing `SHOPWARE_SHOP_ID` is refused.
+
 `mysql_data` / `redis_data` stay named volumes and are not copied (use `--data db` for SQL).
 
-`deploy/vps-release.sh` is unchanged (image pull / setup / web recreate only). `init-perm` still chowns the bind-mount points (uid 82).
+`init-perm` still chowns the bind-mount points (uid 82).
 
 See **[sync-runtime.md](sync-runtime.md)**. Copy `deploy/sync.env.example` → `deploy/sync.env`. Cron on the consumer:
 
 ```cron
-15 2 * * * cd /opt/shopware/staging && bash deploy/sync-runtime.sh sync --from live --data all
+15 2 * * * cd /opt/shopware/acme-staging && bash deploy/sync-runtime.sh sync --from live --data all
 ```
 
 ```bash
 bash deploy/sync-runtime.sh sync --from live --data all --dry-run
 ```
 
-Restore/sync refuse `SYNC_ENV=live` (and a checkout directory named `live`).
+Restore/sync refuse `SYNC_ENV=live` and `SHOPWARE_DEPLOY_ENV=live` (and a checkout directory named `live`).
 
 ## Local project dev pull (live → laptop)
 
 `deploy/sync-runtime-local.sh` rsyncs the same VPS bind-mount trees into a **`shopware-cli project dev`** checkout. Destinations are project-tree paths (`./public/media/`, `./files/`, …), **not** `SHOPWARE_DATA_ROOT`. The database is **not** restored.
+
+Reads `SHOPWARE_SHOP_ID` from local `.env`. Default remote root:
+
+`/var/lib/shopware/data/${SHOPWARE_SHOP_ID}/live`
+
+Override with `--remote-data-root` / `SYNC_REMOTE_DATA_ROOT` / `SYNC_SOURCE_ENV`. Requires `SHOPWARE_SHOP_ID` unless an explicit remote root is set.
 
 Default SSH host alias is `live` (`--from` / `SYNC_SSH_HOST`). `--delete` is off by default (safer on a dirty local tree). A checkout directory named `live` prints a warning so this is not confused with `deploy/sync-runtime.sh`.
 

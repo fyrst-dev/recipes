@@ -21,15 +21,23 @@
 #   worker     — messenger:consume
 #   scheduler  — scheduled-task:run
 #
-# TODO: set `name:` per shop if several stacks share a Docker host.
+# Project name: COMPOSE_PROJECT_NAME in shop-root .env (Compose also reads that
+# env var with no `name:` key). Formula, set as a concrete value:
+#   ${SHOPWARE_SHOP_ID}-${SHOPWARE_DEPLOY_ENV}   e.g. acme-live
+# Must be unique on this Docker host — it scopes named volumes mysql_data /
+# redis_data (acme-live_mysql_data vs acme-staging_mysql_data).
+# Do not hardcode `name: shopware` (collides when several shops/envs share a host).
 #
 # Runtime uploads are bind mounts under SHOPWARE_DATA_ROOT (not named volumes).
-# Create once on the VPS (uid 82 = www-data in shopware docker-base):
-#   mkdir -p ${SHOPWARE_DATA_ROOT:-/var/lib/shopware/data}/{files,media,thumbnail,theme,sitemap}
-#   chown -R 82:82 ${SHOPWARE_DATA_ROOT:-/var/lib/shopware/data}
+# Formula (set the expanded path in .env; Compose does not nest ${A}/${B}):
+#   /var/lib/shopware/data/${SHOPWARE_SHOP_ID}/${SHOPWARE_DEPLOY_ENV}
+#   e.g. /var/lib/shopware/data/acme/live
+# Create once per shop+env on the VPS (uid 82 = www-data in shopware docker-base):
+#   mkdir -p ${SHOPWARE_DATA_ROOT}/{files,media,thumbnail,theme,sitemap}
+#   chown -R 82:82 ${SHOPWARE_DATA_ROOT}
 # mysql_data / redis_data stay named volumes.
 
-name: shopware
+name: "${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME in .env}"
 
 x-shopware: &shopware
     image: ${IMAGE:?Set IMAGE in .env}:${IMAGE_TAG:-latest}
@@ -43,11 +51,11 @@ x-shopware: &shopware
     env_file:
         -   ../.env
     volumes:
-        -   ${SHOPWARE_DATA_ROOT:-/var/lib/shopware/data}/files:/var/www/html/files
-        -   ${SHOPWARE_DATA_ROOT:-/var/lib/shopware/data}/theme:/var/www/html/public/theme
-        -   ${SHOPWARE_DATA_ROOT:-/var/lib/shopware/data}/media:/var/www/html/public/media
-        -   ${SHOPWARE_DATA_ROOT:-/var/lib/shopware/data}/thumbnail:/var/www/html/public/thumbnail
-        -   ${SHOPWARE_DATA_ROOT:-/var/lib/shopware/data}/sitemap:/var/www/html/public/sitemap
+        -   "${SHOPWARE_DATA_ROOT:?Set SHOPWARE_DATA_ROOT in .env}/files:/var/www/html/files"
+        -   "${SHOPWARE_DATA_ROOT:?Set SHOPWARE_DATA_ROOT in .env}/theme:/var/www/html/public/theme"
+        -   "${SHOPWARE_DATA_ROOT:?Set SHOPWARE_DATA_ROOT in .env}/media:/var/www/html/public/media"
+        -   "${SHOPWARE_DATA_ROOT:?Set SHOPWARE_DATA_ROOT in .env}/thumbnail:/var/www/html/public/thumbnail"
+        -   "${SHOPWARE_DATA_ROOT:?Set SHOPWARE_DATA_ROOT in .env}/sitemap:/var/www/html/public/sitemap"
 
 services:
     web:

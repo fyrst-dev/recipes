@@ -2,13 +2,18 @@
 # Pull live VPS runtime upload trees into a local shopware-cli project dev tree.
 #
 # Unidirectional: SSH host (default alias "live") → this laptop/checkout.
-# Remote bind-mount dirs under SYNC_REMOTE_DATA_ROOT (default
-# /var/lib/shopware/data) are remapped to Shopware CLI project paths:
+# Remote bind-mount dirs under the source data root are remapped to Shopware
+# CLI project paths:
 #   media/      → ./public/media/
 #   files/      → ./files/
 #   thumbnail/  → ./public/thumbnail/
 #   theme/      → ./public/theme/
 #   sitemap/    → ./public/sitemap/
+#
+# Default remote root (reads SHOPWARE_SHOP_ID from local .env):
+#   ${SHOPWARE_DATA_BASE:-/var/lib/shopware/data}/${SHOPWARE_SHOP_ID}/live
+# Override with --remote-data-root / SYNC_REMOTE_DATA_ROOT / SYNC_SOURCE_ENV.
+# Requires SHOPWARE_SHOP_ID unless an explicit remote root is set.
 #
 # Does NOT restore the database (dump/import separately).
 # Does NOT write to SHOPWARE_DATA_ROOT / SYNC_DATA_ROOT on this machine —
@@ -27,8 +32,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SHOP_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 DEFAULT_FROM="live"
-DEFAULT_REMOTE_DATA_ROOT="/var/lib/shopware/data"
+DEFAULT_DATA_BASE="/var/lib/shopware/data"
 DEFAULT_DATA="media,files,thumbnail,theme,sitemap"
+DEFAULT_SOURCE_ENV="live"
 
 FROM="$DEFAULT_FROM"
 REMOTE_DATA_ROOT_FLAG=""
@@ -38,6 +44,7 @@ DRY_RUN=0
 
 SSH_TARGET=""
 REMOTE_DATA_ROOT=""
+SOURCE_ENV=""
 DATA_ITEMS=()
 
 log() { printf '==> %s\n' "$*"; }
@@ -59,8 +66,9 @@ Options:
                               Items: media,files,thumbnail,theme,sitemap
                               (not db — this script does not copy the database)
   --remote-data-root <path>   Bind-mount root on the SSH source
-                              (default: SYNC_REMOTE_DATA_ROOT or
-                              /var/lib/shopware/data)
+                              (default: SYNC_REMOTE_DATA_ROOT, else
+                              $SHOPWARE_DATA_BASE/$SHOPWARE_SHOP_ID/$SYNC_SOURCE_ENV
+                              with SYNC_SOURCE_ENV default live)
   --delete                    Pass rsync --delete (off by default so extra
                               local files are kept)
   --dry-run                   Print rsync actions; do not copy
@@ -75,16 +83,20 @@ Path remap (remote $REMOTE_DATA_ROOT → local project tree):
   sitemap/    → ./public/sitemap/
 
 Environment:
+  SHOPWARE_SHOP_ID       Stable shop slug from local .env (required unless
+                         --remote-data-root / SYNC_REMOTE_DATA_ROOT is set)
+  SHOPWARE_DATA_BASE     Prefix helper (default /var/lib/shopware/data)
+  SYNC_SOURCE_ENV        Remote env directory (default: live)
   SYNC_SSH_HOST          SSH hostname (default: --from alias, e.g. Host live)
   SYNC_SSH_USER          SSH user
   SYNC_SSH_PORT          SSH port (default 22)
   SYNC_SSH_KEY           Identity file
-  SYNC_REMOTE_DATA_ROOT  Remote bind-mount root
+  SYNC_REMOTE_DATA_ROOT  Remote bind-mount root (explicit override)
   SYNC_<ALIAS>_SSH_* / SYNC_<ALIAS>_DATA_ROOT
                          Optional per-alias overrides (example: --from live)
 
-Optional: source deploy/sync.env if present (same file as VPS sync).
-Local destinations are never SHOPWARE_DATA_ROOT.
+Optional: source shop-root .env then deploy/sync.env if present.
+Local destinations are never SHOPWARE_DATA_ROOT (project-tree only).
 
 Examples:
 
@@ -163,6 +175,11 @@ fi
 
 cd "$SHOP_ROOT"
 
+PRESET_SHOPWARE_SHOP_ID="${SHOPWARE_SHOP_ID:-}"
+PRESET_SHOPWARE_DATA_BASE="${SHOPWARE_DATA_BASE:-}"
+PRESET_SYNC_SOURCE_ENV="${SYNC_SOURCE_ENV:-}"
+PRESET_SYNC_REMOTE_DATA_ROOT="${SYNC_REMOTE_DATA_ROOT:-}"
+
 load_env_file() {
   local f=$1
   if [[ -f "$f" ]]; then
@@ -173,8 +190,15 @@ load_env_file() {
   fi
 }
 
-# SSH / remote-root only. Do not use shop-root .env SHOPWARE_DATA_ROOT as dest.
+# SSH / identity from local .env; remote-root from shop id + live (or overrides).
+# Do not use shop-root .env SHOPWARE_DATA_ROOT as the local destination.
+load_env_file .env
 load_env_file deploy/sync.env
+
+SHOPWARE_SHOP_ID="${PRESET_SHOPWARE_SHOP_ID:-${SHOPWARE_SHOP_ID:-}}"
+SHOPWARE_DATA_BASE="${PRESET_SHOPWARE_DATA_BASE:-${SHOPWARE_DATA_BASE:-}}"
+SYNC_SOURCE_ENV="${PRESET_SYNC_SOURCE_ENV:-${SYNC_SOURCE_ENV:-}}"
+SYNC_REMOTE_DATA_ROOT="${PRESET_SYNC_REMOTE_DATA_ROOT:-${SYNC_REMOTE_DATA_ROOT:-}}"
 
 split_csv() {
   local csv=$1
@@ -296,8 +320,18 @@ SYNC_SSH_KEY=$keyfile
 
 if [[ -n "$REMOTE_DATA_ROOT_FLAG" ]]; then
   REMOTE_DATA_ROOT=$REMOTE_DATA_ROOT_FLAG
+elif [[ -n "${!specific_dr:-}" ]]; then
+  REMOTE_DATA_ROOT="${!specific_dr}"
+elif [[ -n "${SYNC_REMOTE_DATA_ROOT:-}" ]]; then
+  REMOTE_DATA_ROOT=$SYNC_REMOTE_DATA_ROOT
 else
-  REMOTE_DATA_ROOT="${!specific_dr:-${SYNC_REMOTE_DATA_ROOT:-$DEFAULT_REMOTE_DATA_ROOT}}"
+  if [[ -z "${SHOPWARE_SHOP_ID:-}" ]]; then
+    die "SHOPWARE_SHOP_ID is required in shop-root .env (stable shop slug, same as the VPS), or pass --remote-data-root / set SYNC_REMOTE_DATA_ROOT."
+  fi
+  SHOPWARE_DATA_BASE="${SHOPWARE_DATA_BASE:-$DEFAULT_DATA_BASE}"
+  SOURCE_ENV="${SYNC_SOURCE_ENV:-$DEFAULT_SOURCE_ENV}"
+  REMOTE_DATA_ROOT="${SHOPWARE_DATA_BASE}/${SHOPWARE_SHOP_ID}/${SOURCE_ENV}"
+  log "Remote data root derived ${REMOTE_DATA_ROOT} (shop=${SHOPWARE_SHOP_ID} env=${SOURCE_ENV})"
 fi
 
 if [[ -z "$REMOTE_DATA_ROOT" ]]; then
@@ -345,7 +379,7 @@ data_csv() {
   printf '%s' "${DATA_ITEMS[*]}"
 }
 
-log "Live → local project dev rsync  from=${FROM}  host=${SSH_TARGET}  data=$(data_csv)  remote-data-root=${REMOTE_DATA_ROOT}  delete=${DELETE}  dry-run=${DRY_RUN}"
+log "Live → local project dev rsync  from=${FROM}  host=${SSH_TARGET}  data=$(data_csv)  shop=${SHOPWARE_SHOP_ID:-unset}  remote-data-root=${REMOTE_DATA_ROOT}  delete=${DELETE}  dry-run=${DRY_RUN}"
 log "Local destinations are project-tree paths (not SHOPWARE_DATA_ROOT)"
 
 if [[ "$DRY_RUN" -eq 0 ]]; then

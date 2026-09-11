@@ -15,7 +15,23 @@
     <comment>deploy/compose.vps.yaml</comment>).
     Runtime DB/bind-mount copy between VPS hosts:
     <comment>deploy/sync-runtime.sh</comment> (see <comment>deploy/sync-runtime.md</comment>).
-    Live → local project dev rsync (no DB): <comment>deploy/sync-runtime-local.sh</comment>.
+    Live → local project dev rsync (no DB): <comment>deploy/sync-runtime-local.sh</comment>
+    (reads <comment>SHOPWARE_SHOP_ID</comment> from local <comment>.env</comment>;
+    remote root <comment>/var/lib/shopware/data/${SHOPWARE_SHOP_ID}/live</comment>).
+
+    VPS <comment>.env</comment> (required; set concrete values — Compose does not
+    nest <comment>${A}/${B}</comment>):
+    <comment>SHOPWARE_SHOP_ID</comment> (same slug on live + staging + laptop),
+    <comment>SHOPWARE_DEPLOY_ENV</comment> (live|staging|playground|dev),
+    <comment>COMPOSE_PROJECT_NAME</comment> (unique on the Docker host,
+    e.g. acme-live),
+    <comment>SHOPWARE_DATA_ROOT</comment>
+    (<comment>/var/lib/shopware/data/${SHOPWARE_SHOP_ID}/${SHOPWARE_DEPLOY_ENV}</comment>).
+    Bootstrap:
+    <comment>mkdir -p "${SHOPWARE_DATA_ROOT}"/{files,media,thumbnail,theme,sitemap}</comment>
+    then <comment>chown -R 82:82 "${SHOPWARE_DATA_ROOT}"</comment>.
+    Several shops or live+staging on one VPS share the host; project name and
+    data root keep stacks isolated. Sync scripts derive roots when unset.
 
     You MUST require <comment>shopware/docker</comment> in the same Composer command as
     this package. That recipe copies <comment>docker/Dockerfile</comment>, which CI and
