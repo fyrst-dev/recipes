@@ -19,19 +19,24 @@
     (reads <comment>SHOPWARE_SHOP_ID</comment> from local <comment>.env</comment>;
     remote root <comment>/var/lib/shopware/data/${SHOPWARE_SHOP_ID}/live</comment>).
 
-    VPS <comment>.env</comment> (required; set concrete values — Compose does not
-    nest <comment>${A}/${B}</comment>):
+    VPS <comment>.env</comment> source of truth (required):
     <comment>SHOPWARE_SHOP_ID</comment> (same slug on live + staging + laptop),
-    <comment>SHOPWARE_DEPLOY_ENV</comment> (live|staging|playground|dev),
-    <comment>COMPOSE_PROJECT_NAME</comment> (unique on the Docker host,
-    e.g. acme-live),
-    <comment>SHOPWARE_DATA_ROOT</comment>
-    (<comment>/var/lib/shopware/data/${SHOPWARE_SHOP_ID}/${SHOPWARE_DEPLOY_ENV}</comment>).
+    <comment>SHOPWARE_DEPLOY_ENV</comment> (live|staging|playground|dev).
+    Compose derives project name
+    (<comment>${SHOPWARE_SHOP_ID}-${SHOPWARE_DEPLOY_ENV}</comment>)
+    and bind-mount paths from those two plus optional
+    <comment>SHOPWARE_DATA_BASE</comment> (default
+    <comment>/var/lib/shopware/data</comment>) — three separate interpolations,
+    no nested defaults. It does not require
+    <comment>COMPOSE_PROJECT_NAME</comment> or <comment>SHOPWARE_DATA_ROOT</comment>
+    (optional for scripts/docs; scripts derive when unset and prefer them
+    when set — do not assign them empty).
     Bootstrap:
-    <comment>mkdir -p "${SHOPWARE_DATA_ROOT}"/{files,media,thumbnail,theme,sitemap}</comment>
-    then <comment>chown -R 82:82 "${SHOPWARE_DATA_ROOT}"</comment>.
-    Several shops or live+staging on one VPS share the host; project name and
-    data root keep stacks isolated. Sync scripts derive roots when unset.
+    <comment>DATA="${SHOPWARE_DATA_BASE:-/var/lib/shopware/data}/${SHOPWARE_SHOP_ID}/${SHOPWARE_DEPLOY_ENV}"</comment>
+    then <comment>mkdir -p "${DATA}"/{files,media,thumbnail,theme,sitemap}</comment>
+    then <comment>chown -R 82:82 "${DATA}"</comment>.
+    Several shops or live+staging on one VPS share the host; shop id + env
+    keep stacks isolated.
 
     You MUST require <comment>shopware/docker</comment> in the same Composer command as
     this package. That recipe copies <comment>docker/Dockerfile</comment>, which CI and

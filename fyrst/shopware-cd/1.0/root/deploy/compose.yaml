@@ -21,23 +21,30 @@
 #   worker     — messenger:consume
 #   scheduler  — scheduled-task:run
 #
-# Project name: COMPOSE_PROJECT_NAME in shop-root .env (Compose also reads that
-# env var with no `name:` key). Formula, set as a concrete value:
-#   ${SHOPWARE_SHOP_ID}-${SHOPWARE_DEPLOY_ENV}   e.g. acme-live
-# Must be unique on this Docker host — it scopes named volumes mysql_data /
-# redis_data (acme-live_mysql_data vs acme-staging_mysql_data).
-# Do not hardcode `name: shopware` (collides when several shops/envs share a host).
+# Source of truth: SHOPWARE_SHOP_ID + SHOPWARE_DEPLOY_ENV in shop-root .env.
+# Compose interpolates project name and bind-mount paths from those two (plus
+# optional SHOPWARE_DATA_BASE). COMPOSE_PROJECT_NAME / SHOPWARE_DATA_ROOT are
+# not required here — leave them unset unless a script/tool needs the expanded
+# strings. Nested defaults like ${ROOT:-/base/${SHOP_ID}/...} do not expand
+# in Compose; these are three separate interpolations concatenated with /.
 #
-# Runtime uploads are bind mounts under SHOPWARE_DATA_ROOT (not named volumes).
-# Formula (set the expanded path in .env; Compose does not nest ${A}/${B}):
-#   /var/lib/shopware/data/${SHOPWARE_SHOP_ID}/${SHOPWARE_DEPLOY_ENV}
+# Project name (unique on this Docker host):
+#   ${SHOPWARE_SHOP_ID}-${SHOPWARE_DEPLOY_ENV}   e.g. acme-live
+# Scopes named volumes mysql_data / redis_data
+# (acme-live_mysql_data vs acme-staging_mysql_data).
+# Do not hardcode `name: shopware` (collides when several shops/envs share a host).
+# Do not set COMPOSE_PROJECT_NAME= (empty) in .env — that env var overrides name:.
+#
+# Runtime uploads are bind mounts (not named volumes):
+#   ${SHOPWARE_DATA_BASE:-/var/lib/shopware/data}/${SHOPWARE_SHOP_ID}/${SHOPWARE_DEPLOY_ENV}
 #   e.g. /var/lib/shopware/data/acme/live
 # Create once per shop+env on the VPS (uid 82 = www-data in shopware docker-base):
-#   mkdir -p ${SHOPWARE_DATA_ROOT}/{files,media,thumbnail,theme,sitemap}
-#   chown -R 82:82 ${SHOPWARE_DATA_ROOT}
-# mysql_data / redis_data stay named volumes.
+#   DATA="${SHOPWARE_DATA_BASE:-/var/lib/shopware/data}/${SHOPWARE_SHOP_ID}/${SHOPWARE_DEPLOY_ENV}"
+#   mkdir -p ${DATA}/{files,media,thumbnail,theme,sitemap}
+#   chown -R 82:82 ${DATA}
+# mysql_data / redis_data stay named volumes (auto-prefixed by project name).
 
-name: "${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME in .env}"
+name: "${SHOPWARE_SHOP_ID:?Set SHOPWARE_SHOP_ID in .env}-${SHOPWARE_DEPLOY_ENV:?Set SHOPWARE_DEPLOY_ENV in .env}"
 
 x-shopware: &shopware
     image: ${IMAGE:?Set IMAGE in .env}:${IMAGE_TAG:-latest}
@@ -51,11 +58,11 @@ x-shopware: &shopware
     env_file:
         -   ../.env
     volumes:
-        -   "${SHOPWARE_DATA_ROOT:?Set SHOPWARE_DATA_ROOT in .env}/files:/var/www/html/files"
-        -   "${SHOPWARE_DATA_ROOT:?Set SHOPWARE_DATA_ROOT in .env}/theme:/var/www/html/public/theme"
-        -   "${SHOPWARE_DATA_ROOT:?Set SHOPWARE_DATA_ROOT in .env}/media:/var/www/html/public/media"
-        -   "${SHOPWARE_DATA_ROOT:?Set SHOPWARE_DATA_ROOT in .env}/thumbnail:/var/www/html/public/thumbnail"
-        -   "${SHOPWARE_DATA_ROOT:?Set SHOPWARE_DATA_ROOT in .env}/sitemap:/var/www/html/public/sitemap"
+        -   "${SHOPWARE_DATA_BASE:-/var/lib/shopware/data}/${SHOPWARE_SHOP_ID}/${SHOPWARE_DEPLOY_ENV}/files:/var/www/html/files"
+        -   "${SHOPWARE_DATA_BASE:-/var/lib/shopware/data}/${SHOPWARE_SHOP_ID}/${SHOPWARE_DEPLOY_ENV}/theme:/var/www/html/public/theme"
+        -   "${SHOPWARE_DATA_BASE:-/var/lib/shopware/data}/${SHOPWARE_SHOP_ID}/${SHOPWARE_DEPLOY_ENV}/media:/var/www/html/public/media"
+        -   "${SHOPWARE_DATA_BASE:-/var/lib/shopware/data}/${SHOPWARE_SHOP_ID}/${SHOPWARE_DEPLOY_ENV}/thumbnail:/var/www/html/public/thumbnail"
+        -   "${SHOPWARE_DATA_BASE:-/var/lib/shopware/data}/${SHOPWARE_SHOP_ID}/${SHOPWARE_DEPLOY_ENV}/sitemap:/var/www/html/public/sitemap"
 
 services:
     web:

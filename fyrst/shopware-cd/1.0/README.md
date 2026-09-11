@@ -20,7 +20,7 @@ docker compose -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/comp
 
 (`deploy/vps-release.sh` runs that from the shop root.)
 
-VPS runtime DB + bind-mount pull (no object storage): `deploy/sync-runtime.sh` — see `deploy/sync-runtime.md`. Uploads live under `SHOPWARE_DATA_ROOT` (`/var/lib/shopware/data/${SHOPWARE_SHOP_ID}/${SHOPWARE_DEPLOY_ENV}`). Compose project name is `COMPOSE_PROJECT_NAME` (unique on the host; no hardcoded `name: shopware`).
+VPS runtime DB + bind-mount pull (no object storage): `deploy/sync-runtime.sh` — see `deploy/sync-runtime.md`. Compose source of truth is `SHOPWARE_SHOP_ID` + `SHOPWARE_DEPLOY_ENV` (project name `acme-live`, uploads under `/var/lib/shopware/data/${SHOPWARE_SHOP_ID}/${SHOPWARE_DEPLOY_ENV}`). `COMPOSE_PROJECT_NAME` / `SHOPWARE_DATA_ROOT` are optional script overrides.
 
 Local `shopware-cli project dev` pull (rsync path remap, no DB): `deploy/sync-runtime-local.sh` (derives remote `/var/lib/shopware/data/${SHOPWARE_SHOP_ID}/live`).
 

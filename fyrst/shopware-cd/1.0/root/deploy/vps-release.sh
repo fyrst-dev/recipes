@@ -2,7 +2,7 @@
 # Run on the VPS (or via SSH from CI) after the image has been pushed.
 # Never builds the image and never compiles themes/assets.
 #
-# Required env:
+# Required env (source of truth — same as deploy/compose.yaml):
 #   IMAGE                  registry/repo (e.g. ghcr.io/fyrst-dev/shop-name) — no real defaults
 #   IMAGE_TAG              full git SHA (or a rollback tag)
 #   SHOPWARE_SHOP_ID       stable shop slug (same on live + staging + laptop)
@@ -11,9 +11,14 @@
 #   COMPOSE_DIR            shop checkout (default: repository root next to deploy/)
 #   COMPOSE_PROFILES       comma-separated: redis,worker,scheduler  (never include "setup")
 #   SMOKE_URL              HTTP URL to probe after up (e.g. http://127.0.0.1:8000)
-#   COMPOSE_PROJECT_NAME   unique on this Docker host; default ${SHOPWARE_SHOP_ID}-${SHOPWARE_DEPLOY_ENV}
-#   SHOPWARE_DATA_ROOT     bind-mount root; default /var/lib/shopware/data/${SHOPWARE_SHOP_ID}/${SHOPWARE_DEPLOY_ENV}
 #   SHOPWARE_DATA_BASE     prefix helper (default /var/lib/shopware/data)
+#   COMPOSE_PROJECT_NAME   scripts/docs only; unset → ${SHOPWARE_SHOP_ID}-${SHOPWARE_DEPLOY_ENV}
+#   SHOPWARE_DATA_ROOT     scripts/docs only; unset → $SHOPWARE_DATA_BASE/$SHOPWARE_SHOP_ID/$SHOPWARE_DEPLOY_ENV
+#
+# Compose interpolates project name + bind mounts from shop id + env (and
+# optional SHOPWARE_DATA_BASE). It does not fail when COMPOSE_PROJECT_NAME /
+# SHOPWARE_DATA_ROOT are absent. This script still derives those when unset
+# (and prefers them when set) so logs and tools have the expanded strings.
 #
 # CI-exported IMAGE / IMAGE_TAG always win over .env (which often has IMAGE_TAG=latest).
 #
