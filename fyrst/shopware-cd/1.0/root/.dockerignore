@@ -40,7 +40,7 @@ Thumbs.db
 *.swp
 *.bak
 
-# Overlay docs and VPS helpers are not needed inside the image
+# Overlay docs and VPS helpers (release + runtime sync) stay on the VPS checkout
 *.md
 /deploy
 # CLI-owned shop-root compose (shopware-cli project create) — not this recipe

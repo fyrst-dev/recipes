@@ -94,3 +94,21 @@ Keep the previous image physically on the host (`docker image prune` with care).
 See comments at the top of `.github/workflows/cd.yaml` and `.gitlab-ci.yaml`.
 
 Typical: `SSH_PRIVATE_KEY`, `VPS_HOST`, `VPS_USER`, `VPS_PATH`, `SSH_KNOWN_HOSTS`.
+
+## Runtime data sync
+
+Pull **database + named volumes** (`media`, `files`, `thumbnail`, `theme`, `sitemap`) from another VPS onto this one (usually live → staging). SSH + `mysqldump`/`mariadb-dump` + docker volume tar. Object storage (S3 and similar) is out of scope. Runtime data stays out of git and out of the app image.
+
+`deploy/vps-release.sh` is unchanged (image pull / setup / web recreate only).
+
+See **[sync-runtime.md](sync-runtime.md)**. Copy `deploy/sync.env.example` → `deploy/sync.env`. Cron on the consumer:
+
+```cron
+15 2 * * * cd /opt/shopware/staging && bash deploy/sync-runtime.sh sync --from live --data all
+```
+
+```bash
+bash deploy/sync-runtime.sh sync --from live --data all --dry-run
+```
+
+Restore/sync refuse `SYNC_ENV=live` (and a checkout directory named `live`).
