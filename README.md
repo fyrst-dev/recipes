@@ -53,9 +53,14 @@ cd <shop>
 composer require shopware/docker shopware/deployment-helper fyrst/shopware-cd
 ```
 
-`shopware/docker` is required in that same command: it copies `docker/Dockerfile`, which CI and Compose default to. This recipe does not ship a root Dockerfile. A missing `docker/Dockerfile` means `shopware/docker` was skipped.
+`shopware/docker` is required in that same command: it copies `docker/Dockerfile`, which CI and CD Compose default to. This recipe does not ship a root Dockerfile. A missing `docker/Dockerfile` means `shopware/docker` was skipped.
 
-Flex copies CI, Compose, and deploy files into the shop root. Copy `.env.example` → `.env` yourself (Flex never writes `.env`). Commit the copied files; `vendor/` stays gitignored.
+`shopware-cli project create` owns `compose.yaml`, `.gitignore`, and `.shopware-project.yaml`. This recipe does **not** copy them.
+
+- **Local:** `shopware-cli project dev` and the CLI-managed shop-root `compose.yaml`.
+- **VPS/CD:** files under `deploy/` (`deploy/compose.yaml`, `deploy/compose.prod.yaml`, `deploy/compose.vps.yaml`).
+
+Flex copies CI, `deploy/` (including CD Compose), `.dockerignore`, and `.env.example` into the shop root. Copy `.env.example` → `.env` yourself (Flex never writes `.env`). Commit the copied files; `vendor/` stays gitignored.
 
 ## Update recipes
 
@@ -82,7 +87,7 @@ composer recipes:update fyrst/shopware-cd
 
 | Path | Role |
 |---|---|
-| `fyrst/shopware-cd/1.0/` | Current Flex recipe for Packagist package `fyrst/shopware-cd` (overlays live only here; Packagist package repo is https://github.com/fyrst-dev/shopware-cd) |
+| `fyrst/shopware-cd/1.0/` | Current Flex recipe for Packagist package `fyrst/shopware-cd` (overlays live only here; Packagist package repo is https://github.com/fyrst-dev/shopware-cd). Ships CI, `deploy/` (CD Compose), `.dockerignore`, `.env.example`. Does not copy `compose.yaml`, `.gitignore`, or `.shopware-project.yaml` (`shopware-cli project create` / CLI). |
 | `.github/workflows/flex-update.yml` | Compiles recipes → `flex/main` |
 | `.github/workflows/flex-cleanup.yml` | Deletes Flex PR test refs |
 

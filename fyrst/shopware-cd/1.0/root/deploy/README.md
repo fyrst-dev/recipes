@@ -2,6 +2,9 @@
 #
 # Locked process: https://app.clickup.com/90151931897/docs/2kyqjkzt-915
 # Image is built in CI from `docker/Dockerfile` (`shopware-cli project ci`). This host only pulls and runs it.
+#
+# CD/VPS stack lives here under `deploy/`. Shop-root `compose.yaml` is owned by
+# `shopware-cli project create` (`shopware-cli project dev`) — not this recipe.
 
 ## Model
 
@@ -16,7 +19,7 @@
 2. Checkout this shop repo (read-only deploy key) to a path such as `/opt/shopware/<shop>`.
    That path is `VPS_PATH` in CI.
 3. Copy `.env.example` → `.env` and fill runtime secrets. `chmod 600 .env`.
-4. Create `.env.prod` (may be empty) so `compose.prod.yaml` can mount it.
+4. Create `.env.prod` (may be empty) so `deploy/compose.prod.yaml` can mount it.
 5. Set `IMAGE` to the registry repository CI pushes (example: `ghcr.io/fyrst-dev/shop-name`).
 6. `docker login` to that registry on the VPS (or use a credential helper / `~/.docker/config.json`).
 7. Put a reverse proxy in front of `HTTP_PORT` (TLS). Do not expose MySQL.
@@ -37,7 +40,7 @@
      --skip-assets-install
    ```
 
-   (via `docker compose --profile setup run --rm setup`)
+   (via `docker compose -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/compose.vps.yaml --profile setup run --rm --no-build setup`)
 5. Recreate `web` with `--no-build`
 6. Optional `SMOKE_URL` check
 
@@ -54,11 +57,17 @@ git checkout --quiet "$IMAGE_TAG"
 bash ./deploy/vps-release.sh
 ```
 
-Compose files used:
+Compose files used (from shop root; not the CLI-managed shop-root `compose.yaml`):
 
-- `compose.yaml`
-- `compose.prod.yaml`
-- `deploy/compose.vps.yaml`
+```bash
+docker compose -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/compose.vps.yaml ...
+```
+
+- `deploy/compose.yaml` — CD/VPS image-based stack
+- `deploy/compose.prod.yaml` — production overrides
+`deploy/vps-release.sh` sources shop-root `.env` then runs that command from `COMPOSE_DIR` (shop root).
+
+Local development uses `shopware-cli project create`'s shop-root `compose.yaml` with `shopware-cli project dev`. This recipe does not copy that file.
 
 ## Why skip theme/assets on deploy
 

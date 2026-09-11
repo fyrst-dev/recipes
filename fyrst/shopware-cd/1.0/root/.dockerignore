@@ -43,6 +43,7 @@ Thumbs.db
 # Overlay docs and VPS helpers are not needed inside the image
 *.md
 /deploy
+# CLI-owned shop-root compose (shopware-cli project create) — not this recipe
 compose.yaml
 compose.prod.yaml
 compose.override.yaml
@@ -51,7 +52,7 @@ docker-compose*.yml
 docker-compose*.yaml
 Makefile
 
-# Tests (also list extra cleanup in .shopware-project.yaml if needed)
+# Tests (also list extra cleanup in CLI-owned .shopware-project.yaml if needed)
 /tests
 .phpunit.result.cache
 .php-cs-fixer.cache
