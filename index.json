@@ -1,1 +1,20 @@
-{}
+{
+    "aliases": [],
+    "recipes": {
+        "fyrst/shopware-cd": [
+            "1.0"
+        ]
+    },
+    "recipe-conflicts": [],
+    "versions": [],
+    "branch": "main",
+    "is_contrib": true,
+    "_links": {
+        "repository": "github.com/fyrst-dev/recipes",
+        "origin_template": "{package}:{version}@github.com/fyrst-dev/recipes:main",
+        "recipe_template": "https://raw.githubusercontent.com/fyrst-dev/recipes/flex/main/{package_dotted}.{version}.json",
+        "recipe_template_relative": "{package_dotted}.{version}.json",
+        "archived_recipes_template": "https://raw.githubusercontent.com/fyrst-dev/recipes/flex/main/archived/{package_dotted}/{ref}.json",
+        "archived_recipes_template_relative": "archived/{package_dotted}/{ref}.json"
+    }
+}
