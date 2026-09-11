@@ -1,0 +1,9 @@
+name: Cleanup Flex testing endpoint
+on:
+    pull_request_target:
+        types: [closed]
+jobs:
+    call-flex-cleanup:
+        uses: symfony/recipes/.github/workflows/callable-flex-cleanup.yml@main
+        permissions:
+            contents: write
