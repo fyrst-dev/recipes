@@ -21,9 +21,17 @@
 3. Copy `.env.example` → `.env` and fill runtime secrets. `chmod 600 .env`.
 4. Create `.env.prod` (may be empty) so `deploy/compose.prod.yaml` can mount it.
 5. Set `IMAGE` to the registry repository CI pushes (example: `ghcr.io/fyrst-dev/shop-name`).
-6. `docker login` to that registry on the VPS (or use a credential helper / `~/.docker/config.json`).
-7. Put a reverse proxy in front of `HTTP_PORT` (TLS). Do not expose MySQL.
-8. Store the previous image tag for rollback (the release script writes `.deployed-tag` / `.previous-tag`).
+6. Create the runtime upload bind mounts (uid 82 = www-data in docker-base):
+
+   ```bash
+   # SHOPWARE_DATA_ROOT from .env (default /var/lib/shopware/data)
+   mkdir -p /var/lib/shopware/data/{files,media,thumbnail,theme,sitemap}
+   chown -R 82:82 /var/lib/shopware/data
+   ```
+
+7. `docker login` to that registry on the VPS (or use a credential helper / `~/.docker/config.json`).
+8. Put a reverse proxy in front of `HTTP_PORT` (TLS). Do not expose MySQL.
+9. Store the previous image tag for rollback (the release script writes `.deployed-tag` / `.previous-tag`).
 
 ## CD sequence (what CI runs)
 
@@ -94,3 +102,23 @@ Keep the previous image physically on the host (`docker image prune` with care).
 See comments at the top of `.github/workflows/cd.yaml` and `.gitlab-ci.yaml`.
 
 Typical: `SSH_PRIVATE_KEY`, `VPS_HOST`, `VPS_USER`, `VPS_PATH`, `SSH_KNOWN_HOSTS`.
+
+## Runtime data sync
+
+Pull **database + bind-mounted upload trees** (`media`, `files`, `thumbnail`, `theme`, `sitemap` under `SHOPWARE_DATA_ROOT`) from another VPS onto this one (usually live → staging). SSH + `mysqldump`/`mariadb-dump` + **rsync of those host directories**. Object storage (S3 and similar) is out of scope. Runtime data stays out of git and out of the app image.
+
+`mysql_data` / `redis_data` stay named volumes and are not copied (use `--data db` for SQL).
+
+`deploy/vps-release.sh` is unchanged (image pull / setup / web recreate only). `init-perm` still chowns the bind-mount points (uid 82).
+
+See **[sync-runtime.md](sync-runtime.md)**. Copy `deploy/sync.env.example` → `deploy/sync.env`. Cron on the consumer:
+
+```cron
+15 2 * * * cd /opt/shopware/staging && bash deploy/sync-runtime.sh sync --from live --data all
+```
+
+```bash
+bash deploy/sync-runtime.sh sync --from live --data all --dry-run
+```
+
+Restore/sync refuse `SYNC_ENV=live` (and a checkout directory named `live`).

@@ -22,6 +22,12 @@
 #   scheduler  — scheduled-task:run
 #
 # TODO: set `name:` per shop if several stacks share a Docker host.
+#
+# Runtime uploads are bind mounts under SHOPWARE_DATA_ROOT (not named volumes).
+# Create once on the VPS (uid 82 = www-data in shopware docker-base):
+#   mkdir -p ${SHOPWARE_DATA_ROOT:-/var/lib/shopware/data}/{files,media,thumbnail,theme,sitemap}
+#   chown -R 82:82 ${SHOPWARE_DATA_ROOT:-/var/lib/shopware/data}
+# mysql_data / redis_data stay named volumes.
 
 name: shopware
 
@@ -37,11 +43,11 @@ x-shopware: &shopware
     env_file:
         -   ../.env
     volumes:
-        -   files:/var/www/html/files
-        -   theme:/var/www/html/public/theme
-        -   media:/var/www/html/public/media
-        -   thumbnail:/var/www/html/public/thumbnail
-        -   sitemap:/var/www/html/public/sitemap
+        -   ${SHOPWARE_DATA_ROOT:-/var/lib/shopware/data}/files:/var/www/html/files
+        -   ${SHOPWARE_DATA_ROOT:-/var/lib/shopware/data}/theme:/var/www/html/public/theme
+        -   ${SHOPWARE_DATA_ROOT:-/var/lib/shopware/data}/media:/var/www/html/public/media
+        -   ${SHOPWARE_DATA_ROOT:-/var/lib/shopware/data}/thumbnail:/var/www/html/public/thumbnail
+        -   ${SHOPWARE_DATA_ROOT:-/var/lib/shopware/data}/sitemap:/var/www/html/public/sitemap
 
 services:
     web:
@@ -81,7 +87,7 @@ services:
                 "--skip-assets-install",
             ]
 
-    # Volume ownership for uid 82 (www-data in docker-base). Same profile as setup.
+    # Bind-mount ownership for uid 82 (www-data in docker-base). Same profile as setup.
     init-perm:
         <<: *shopware
         profiles: ["setup"]
@@ -160,10 +166,5 @@ services:
         entrypoint: ["php", "bin/console", "scheduled-task:run"]
 
 volumes:
-    files:
-    theme:
-    media:
-    thumbnail:
-    sitemap:
     mysql_data:
     redis_data:
