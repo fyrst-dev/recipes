@@ -28,7 +28,7 @@
 #
 # Compose / VPS (DEPLOY_TARGET empty or "compose"):
 #   deploy/vps-release.sh runs from shop root with
-#     docker compose -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/compose.vps.yaml
+#     docker compose --env-file .env -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/compose.vps.yaml
 #   Shop-root compose.yaml is owned by shopware-cli project create (local only).
 #   SSH_PRIVATE_KEY          file or masked variable (PEM)
 #   VPS_HOST

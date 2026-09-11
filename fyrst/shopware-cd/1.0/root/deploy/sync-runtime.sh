@@ -122,7 +122,7 @@ Cron (run on staging, pull from live):
   15 2 * * * cd /opt/shopware/acme-staging && bash deploy/sync-runtime.sh sync --from live --data all
 
 Compose files (same as deploy/vps-release.sh, from shop root):
-  docker compose -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/compose.vps.yaml
+  docker compose --env-file .env -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/compose.vps.yaml
 EOF
 }
 
@@ -485,12 +485,13 @@ done
 
 COMPOSE=(
   docker compose
+  --env-file .env
   -f deploy/compose.yaml
   -f deploy/compose.prod.yaml
   -f deploy/compose.vps.yaml
 )
 
-COMPOSE_STR="docker compose -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/compose.vps.yaml"
+COMPOSE_STR="docker compose --env-file .env -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/compose.vps.yaml"
 
 derive_compose_project_name
 

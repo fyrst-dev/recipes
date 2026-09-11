@@ -15,7 +15,7 @@ Overlays for Packagist package [`fyrst/shopware-cd`](https://github.com/fyrst-de
 **VPS/CD:** image-based stack under `deploy/`:
 
 ```bash
-docker compose -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/compose.vps.yaml
+docker compose --env-file .env -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/compose.vps.yaml
 ```
 
 (`deploy/vps-release.sh` runs that from the shop root.)

@@ -92,7 +92,7 @@ Named volumes become `acme-live_mysql_data`, `acme-staging_mysql_data`, … — 
      --skip-assets-install
    ```
 
-   (via `docker compose -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/compose.vps.yaml --profile setup run --rm --no-build setup`)
+   (via `docker compose --env-file .env -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/compose.vps.yaml --profile setup run --rm --no-build setup`)
 5. Recreate `web` with `--no-build`
 6. Optional `SMOKE_URL` check
 
@@ -112,7 +112,7 @@ bash ./deploy/vps-release.sh
 Compose files used (from shop root; not the CLI-managed shop-root `compose.yaml`):
 
 ```bash
-docker compose -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/compose.vps.yaml ...
+docker compose --env-file .env -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/compose.vps.yaml ...
 ```
 
 - `deploy/compose.yaml` — CD/VPS image-based stack

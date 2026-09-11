@@ -2,8 +2,8 @@
 # host never rebuilds the image (assets were compiled in CI).
 #
 # Invoke from the shop root:
-#   docker compose -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/compose.vps.yaml pull
-#   docker compose -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/compose.vps.yaml up -d --no-build
+#   docker compose --env-file .env -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/compose.vps.yaml pull
+#   docker compose --env-file .env -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/compose.vps.yaml up -d --no-build
 
 services:
     web:

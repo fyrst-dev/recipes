@@ -2,8 +2,10 @@
 # shopware-cli project create owns the shop-root compose.yaml used by
 # `shopware-cli project dev`. This file is only the prod/CD stack.
 #
-# Invoke from the shop root (COMPOSE_DIR):
-#   docker compose -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/compose.vps.yaml ...
+# Invoke from the shop root (COMPOSE_DIR). Pass --env-file .env so interpolation
+# reads shop-root `.env` (the compose file lives under deploy/, so Compose's
+# default `.env` lookup would be deploy/.env).
+#   docker compose --env-file .env -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/compose.vps.yaml ...
 #
 # Production overrides: deploy/compose.prod.yaml
 # VPS pull/no-build:    deploy/compose.vps.yaml
@@ -81,7 +83,7 @@ services:
             start_period: 30s
 
     # One-shot install/update. Never compiles themes/assets (those are in the image).
-    #   docker compose -f deploy/compose.yaml --profile setup run --rm setup
+    #   docker compose --env-file .env -f deploy/compose.yaml --profile setup run --rm setup
     setup:
         <<: *shopware
         profiles: ["setup"]

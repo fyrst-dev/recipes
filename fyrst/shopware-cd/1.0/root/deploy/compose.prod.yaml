@@ -1,5 +1,5 @@
 # Production / VPS overrides. Used from the shop root as:
-#   docker compose -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/compose.vps.yaml ...
+#   docker compose --env-file .env -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/compose.vps.yaml ...
 #
 # Put secrets in shop-root `.env` (required) and optional extra keys in `.env.prod`.
 # Create an empty `.env.prod` on the VPS if you do not need overrides.

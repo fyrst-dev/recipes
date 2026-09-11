@@ -23,7 +23,7 @@
 # CI-exported IMAGE / IMAGE_TAG always win over .env (which often has IMAGE_TAG=latest).
 #
 # Compose files (always invoked from shop root COMPOSE_DIR):
-#   docker compose -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/compose.vps.yaml
+#   docker compose --env-file .env -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/compose.vps.yaml
 
 set -euo pipefail
 
@@ -81,6 +81,7 @@ done
 
 COMPOSE=(
   docker compose
+  --env-file .env
   -f deploy/compose.yaml
   -f deploy/compose.prod.yaml
   -f deploy/compose.vps.yaml
