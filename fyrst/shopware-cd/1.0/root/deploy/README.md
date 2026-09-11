@@ -122,3 +122,15 @@ bash deploy/sync-runtime.sh sync --from live --data all --dry-run
 ```
 
 Restore/sync refuse `SYNC_ENV=live` (and a checkout directory named `live`).
+
+## Local project dev pull (live → laptop)
+
+`deploy/sync-runtime-local.sh` rsyncs the same VPS bind-mount trees into a **`shopware-cli project dev`** checkout. Destinations are project-tree paths (`./public/media/`, `./files/`, …), **not** `SHOPWARE_DATA_ROOT`. The database is **not** restored.
+
+Default SSH host alias is `live` (`--from` / `SYNC_SSH_HOST`). `--delete` is off by default (safer on a dirty local tree). A checkout directory named `live` prints a warning so this is not confused with `deploy/sync-runtime.sh`.
+
+```bash
+bash deploy/sync-runtime-local.sh --from live --data all --dry-run
+bash deploy/sync-runtime-local.sh --from live --data media,files
+shopware-cli project console cache:clear
+```

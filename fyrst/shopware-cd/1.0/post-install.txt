@@ -15,6 +15,7 @@
     <comment>deploy/compose.vps.yaml</comment>).
     Runtime DB/bind-mount copy between VPS hosts:
     <comment>deploy/sync-runtime.sh</comment> (see <comment>deploy/sync-runtime.md</comment>).
+    Live → local project dev rsync (no DB): <comment>deploy/sync-runtime-local.sh</comment>.
 
     You MUST require <comment>shopware/docker</comment> in the same Composer command as
     this package. That recipe copies <comment>docker/Dockerfile</comment>, which CI and
