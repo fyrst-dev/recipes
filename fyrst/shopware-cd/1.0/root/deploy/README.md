@@ -1,7 +1,7 @@
 # fyrst.dev — primary deploy: Docker Compose on a VPS
 #
 # Locked process: https://app.clickup.com/90151931897/docs/2kyqjkzt-915
-# Image is built in CI (`shopware-cli project ci`). This host only pulls and runs it.
+# Image is built in CI from `docker/Dockerfile` (`shopware-cli project ci`). This host only pulls and runs it.
 
 ## Model
 
