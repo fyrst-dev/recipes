@@ -2,16 +2,16 @@
 # Snapshot / restore / sync Shopware runtime data between VPS environments.
 #
 # Unidirectional pull: run this on the CONSUMER (staging, playground, dev) with
-# `--from <source>`. Database + named volumes stay on the hosts (SQL dump +
-# docker volume tar over SSH). Object storage (S3 and similar) is out of scope
-# for this VPS path.
+# `--from <source>`. Database + bind-mounted upload trees under
+# SHOPWARE_DATA_ROOT stay on the hosts (SQL dump + rsync). Object storage
+# (S3 and similar) is out of scope for this VPS path.
 #
 # Does not call deploy/vps-release.sh and does not change release behaviour.
 #
 # Do not run with `bash -x` — DATABASE_URL / MYSQL_* may be in the environment.
 #
 # Required on each host: docker (Compose plugin), bash, OpenSSH client, gzip.
-# rsync is optional (used when the source already wrote a snapshot directory).
+# rsync is required for incremental bind-mount sync (tar is the fallback).
 #
 # Usage: deploy/sync-runtime.sh <snapshot|restore|sync> [options]
 # See deploy/sync-runtime.md and deploy/sync.env.example.
@@ -45,6 +45,9 @@ SSH_TARGET=""
 REMOTE_PATH=""
 PROJECT_NAME="shopware"
 ARCHIVE_IMAGE="${SYNC_ARCHIVE_IMAGE:-alpine:3.20}"
+DEFAULT_DATA_ROOT="/var/lib/shopware/data"
+DATA_ROOT=""
+REMOTE_DATA_ROOT=""
 STOPPED_APP=()
 WANT_DB=0
 WANT_VOLUMES=()
@@ -59,9 +62,9 @@ usage() {
 Usage: deploy/sync-runtime.sh <command> [options]
 
 Commands:
-  snapshot   Dump DB and/or archive named volumes into --snapshot-dir
-  restore    Load --snapshot-dir into this host's DB and/or volumes
-  sync       snapshot from --from, then restore locally (cron path)
+  snapshot   Dump DB and/or copy bind-mount trees into --snapshot-dir
+  restore    Load --snapshot-dir into this host's DB and/or SHOPWARE_DATA_ROOT
+  sync       Pull from --from then apply locally (cron path: rsync trees + DB)
   help       Show this help
 
 Options:
@@ -78,6 +81,9 @@ Options:
 Environment (no secrets in this script; see deploy/sync.env.example):
   SYNC_ENV               Consumer name. restore/sync refuse SYNC_ENV=live
                          (also refused when the checkout directory is named live)
+  SHOPWARE_DATA_ROOT     Bind-mount root (default /var/lib/shopware/data)
+  SYNC_DATA_ROOT         Override for this host (else SHOPWARE_DATA_ROOT)
+  SYNC_REMOTE_DATA_ROOT  Bind-mount root on the SSH source
   SYNC_SSH_HOST          Source hostname (default: the --from alias, which
                          may be an ~/.ssh/config Host)
   SYNC_SSH_USER          SSH user
@@ -86,12 +92,12 @@ Environment (no secrets in this script; see deploy/sync.env.example):
   SYNC_REMOTE_PATH       Shop checkout on the source (required for SSH)
   SYNC_APP_URL           This environment's public URL (reminder after restore)
   SYNC_POST_RESTORE_CMD  Optional shell command after restore (non-fatal)
-  SYNC_ARCHIVE_IMAGE     Image used to tar volumes (default alpine:3.20)
+  SYNC_ARCHIVE_IMAGE     Image used to tar trees if rsync cannot (default alpine:3.20)
   COMPOSE_DIR            Shop root (default: parent of deploy/)
   COMPOSE_PROJECT_NAME   Overrides compose project (default: name in compose)
 
 Per-alias overrides (example --from live): SYNC_LIVE_SSH_HOST, SYNC_LIVE_SSH_USER,
-SYNC_LIVE_SSH_PORT, SYNC_LIVE_SSH_KEY, SYNC_LIVE_REMOTE_PATH.
+SYNC_LIVE_SSH_PORT, SYNC_LIVE_SSH_KEY, SYNC_LIVE_REMOTE_PATH, SYNC_LIVE_DATA_ROOT.
 
 Cron (run on staging, pull from live):
 
@@ -183,6 +189,7 @@ cd "$COMPOSE_DIR"
 PRESET_SYNC_ENV="${SYNC_ENV:-}"
 PRESET_IMAGE="${IMAGE:-}"
 PRESET_IMAGE_TAG="${IMAGE_TAG:-}"
+PRESET_SYNC_DATA_ROOT="${SYNC_DATA_ROOT:-}"
 
 load_env_file() {
   local f=$1
@@ -204,6 +211,7 @@ IMAGE_TAG="${PRESET_IMAGE_TAG:-${IMAGE_TAG:-latest}}"
 export IMAGE IMAGE_TAG
 
 SNAPSHOT_DIR="${SNAPSHOT_DIR:-${SYNC_SNAPSHOT_DIR:-${COMPOSE_DIR}/var/runtime-sync}}"
+DATA_ROOT="${PRESET_SYNC_DATA_ROOT:-${SYNC_DATA_ROOT:-${SHOPWARE_DATA_ROOT:-$DEFAULT_DATA_ROOT}}}"
 
 split_csv() {
   local csv=$1
@@ -323,7 +331,7 @@ resolve_source() {
   fi
 
   SOURCE_IS_LOCAL=0
-  local key host user port keyfile
+  local key host user port keyfile specific_dr
   key="$(alias_key "$FROM")"
 
   host="$(pick_alias_env "$key" SSH_HOST)"
@@ -331,6 +339,8 @@ resolve_source() {
   port="$(pick_alias_env "$key" SSH_PORT)"
   keyfile="$(pick_alias_env "$key" SSH_KEY)"
   REMOTE_PATH="$(pick_alias_env "$key" REMOTE_PATH)"
+  specific_dr="SYNC_${key}_DATA_ROOT"
+  REMOTE_DATA_ROOT="${!specific_dr:-${SYNC_REMOTE_DATA_ROOT:-}}"
 
   if [[ -z "$host" ]]; then
     host=$FROM
@@ -379,7 +389,7 @@ COMPOSE_STR="docker compose -f deploy/compose.yaml -f deploy/compose.prod.yaml -
 require_cmd() {
   local c=$1
   if ! command -v "$c" >/dev/null 2>&1; then
-    die "Missing command '${c}'. Install docker, bash, openssh-client, and gzip on this host (rsync recommended)."
+    die "Missing command '${c}'. Install docker, bash, openssh-client, gzip, and rsync on this host."
   fi
 }
 
@@ -398,6 +408,9 @@ assert_tools() {
     if [[ -n "${SYNC_SSH_KEY:-}" && ! -f "${SYNC_SSH_KEY}" ]]; then
       die "SYNC_SSH_KEY not found: ${SYNC_SSH_KEY}"
     fi
+  fi
+  if [[ ${#WANT_VOLUMES[@]} -gt 0 ]] && ! command -v rsync >/dev/null 2>&1; then
+    log "rsync not installed; bind-mount trees will use tar (install rsync for incremental live→staging copies)"
   fi
 }
 
@@ -602,6 +615,72 @@ volume_docker_name() {
   printf '%s_%s\n' "$PROJECT_NAME" "$logical"
 }
 
+bind_item_dir() {
+  local root=$1
+  local logical=$2
+  printf '%s/%s\n' "$root" "$logical"
+}
+
+resolve_remote_data_root() {
+  if [[ "$SOURCE_IS_LOCAL" -eq 1 ]]; then
+    REMOTE_DATA_ROOT="$DATA_ROOT"
+    return
+  fi
+  if [[ -n "${REMOTE_DATA_ROOT}" ]]; then
+    return
+  fi
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    REMOTE_DATA_ROOT=$DEFAULT_DATA_ROOT
+    log "DRY-RUN remote SHOPWARE_DATA_ROOT default ${REMOTE_DATA_ROOT} (probe skipped)"
+    return
+  fi
+  local probed="" remote_printf
+  # Expand SYNC_DATA_ROOT / SHOPWARE_DATA_ROOT on the remote after it sources .env.
+  # shellcheck disable=SC2016
+  remote_printf='printf %s "${SYNC_DATA_ROOT:-${SHOPWARE_DATA_ROOT:-/var/lib/shopware/data}}"'
+  probed="$(remote_bash "$remote_printf" || true)"
+  probed="$(printf '%s' "$probed" | tr -d '\r' | tail -n 1)"
+  if [[ -n "$probed" ]]; then
+    REMOTE_DATA_ROOT=$probed
+  else
+    REMOTE_DATA_ROOT=$DEFAULT_DATA_ROOT
+  fi
+  log "Remote bind-mount root: ${REMOTE_DATA_ROOT}"
+}
+
+chown_data_dir() {
+  local d=$1
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    log "DRY-RUN chown 82:82 ${d}"
+    return
+  fi
+  mkdir -p "$d"
+  if chown -R 82:82 "$d" 2>/dev/null; then
+    return
+  fi
+  docker run --rm -v "${d}:/to" "$ARCHIVE_IMAGE" chown -R 82:82 /to
+}
+
+remote_dir_exists() {
+  local p=$1
+  remote_bash "test -d $(printf '%q' "$p")"
+}
+
+rsync_local_trees() {
+  local src=$1
+  local dest=$2
+  mkdir -p "$dest"
+  rsync -aH --delete --numeric-ids "${src%/}/" "${dest%/}/"
+}
+
+rsync_from_remote_tree() {
+  local remote_dir=$1
+  local dest=$2
+  mkdir -p "$dest"
+  rsync -azH --delete --numeric-ids -e "${SSH_CMD[*]}" \
+    "${SSH_TARGET}:${remote_dir%/}/" "${dest%/}/"
+}
+
 ensure_snapshot_dir() {
   if [[ "$SNAPSHOT_DIR" != /* ]]; then
     SNAPSHOT_DIR="${COMPOSE_DIR}/${SNAPSHOT_DIR}"
@@ -610,8 +689,8 @@ ensure_snapshot_dir() {
     log "Snapshot directory: ${SNAPSHOT_DIR}"
     return
   fi
-  mkdir -p "${SNAPSHOT_DIR}/volumes"
-  chmod 700 "$SNAPSHOT_DIR"
+    mkdir -p "${SNAPSHOT_DIR}/volumes" "${SNAPSHOT_DIR}/data"
+    chmod 700 "$SNAPSHOT_DIR"
 }
 
 lock_sync() {
@@ -642,7 +721,9 @@ write_manifest() {
     printf 'compose_dir=%s\n' "$COMPOSE_DIR"
     printf 'project=%s\n' "$PROJECT_NAME"
     printf 'data=%s\n' "$(IFS=','; echo "${DATA_ITEMS[*]}")"
-    printf 'transport=ssh+mysqldump+docker-volume-tar\n'
+    printf 'data_root=%s\n' "$DATA_ROOT"
+    printf 'remote_data_root=%s\n' "${REMOTE_DATA_ROOT:-}"
+    printf 'transport=ssh+mysqldump+rsync-bind-mounts\n'
     printf 'object_storage=out-of-scope\n'
   } >"$dest"
   if command -v sha256sum >/dev/null 2>&1; then
@@ -820,13 +901,13 @@ archive_volume_local() {
   local vol tarout
   vol="$(volume_docker_name "$logical")"
   tarout="${SNAPSHOT_DIR}/volumes/${logical}.tar.gz"
-  log "Archiving volume ${vol} → ${tarout}"
+  log "Archiving named volume ${vol} → ${tarout} (bind-mount fallback)"
   if [[ "$DRY_RUN" -eq 1 ]]; then
     log "DRY-RUN docker run --rm -v ${vol}:/from:ro -v ${SNAPSHOT_DIR}/volumes:/to ${ARCHIVE_IMAGE} tar"
     return
   fi
   if ! docker volume inspect "$vol" >/dev/null 2>&1; then
-    die "Named volume '${vol}' not found. Start the CD stack once (deploy/vps-release.sh) or set COMPOSE_PROJECT_NAME to match compose name: (default shopware). Bind-mount replacements: tar/rsync that host path into the same snapshot file name."
+    die "Named volume '${vol}' not found and bind-mount $(bind_item_dir "$DATA_ROOT" "$logical") is missing. mkdir -p \$SHOPWARE_DATA_ROOT/{files,media,thumbnail,theme,sitemap} && chown 82:82 (see deploy/README.md)."
   fi
   docker run --rm \
     -v "${vol}:/from:ro" \
@@ -841,7 +922,7 @@ archive_volume_remote() {
   local vol tarout
   vol="$(volume_docker_name "$logical")"
   tarout="${SNAPSHOT_DIR}/volumes/${logical}.tar.gz"
-  log "Archiving remote volume ${vol} on ${SSH_TARGET} → ${tarout}"
+  log "Archiving remote named volume ${vol} on ${SSH_TARGET} → ${tarout} (bind-mount fallback)"
   if [[ "$DRY_RUN" -eq 1 ]]; then
     log "DRY-RUN ssh ${SSH_TARGET} docker run -v ${vol}:/from:ro ${ARCHIVE_IMAGE} tar -czf -"
     return
@@ -865,7 +946,7 @@ restore_volume_local() {
   if [[ ! -f "$tarin" ]]; then
     die "Missing ${tarin}"
   fi
-  log "Restoring volume ${vol} from ${tarin}"
+  log "Restoring named volume ${vol} from ${tarin} (bind-mount fallback)"
   if [[ "$DRY_RUN" -eq 1 ]]; then
     log "DRY-RUN docker volume create ${vol}; extract tar into ${vol}; chown 82:82"
     return
@@ -880,6 +961,125 @@ restore_volume_local() {
       find /to -mindepth 1 -maxdepth 1 -exec rm -rf {} +
       tar -C /to -xzf /from/${logical}.tar.gz
       chown -R 82:82 /to || true"
+}
+
+snapshot_bind_local() {
+  local logical=$1
+  local src dest
+  src="$(bind_item_dir "$DATA_ROOT" "$logical")"
+  dest="${SNAPSHOT_DIR}/data/${logical}"
+  if [[ -d "$src" ]]; then
+    log "Snapshot bind mount ${src} → ${dest}"
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+      log "DRY-RUN rsync ${src}/ ${dest}/"
+      return
+    fi
+    if command -v rsync >/dev/null 2>&1; then
+      rsync_local_trees "$src" "$dest"
+    else
+      mkdir -p "$dest"
+      tar -C "$src" -czf "${SNAPSHOT_DIR}/volumes/${logical}.tar.gz" .
+    fi
+    return
+  fi
+  log "Bind mount ${src} missing; trying named volume"
+  archive_volume_local "$logical"
+}
+
+snapshot_bind_remote() {
+  local logical=$1
+  local src dest
+  src="$(bind_item_dir "$REMOTE_DATA_ROOT" "$logical")"
+  dest="${SNAPSHOT_DIR}/data/${logical}"
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    log "DRY-RUN rsync ${SSH_TARGET}:${src}/ → ${dest}/"
+    return
+  fi
+  if remote_dir_exists "$src"; then
+    log "Snapshot remote bind mount ${SSH_TARGET}:${src} → ${dest}"
+    if command -v rsync >/dev/null 2>&1; then
+      rsync_from_remote_tree "$src" "$dest"
+    else
+      mkdir -p "$(dirname "${SNAPSHOT_DIR}/volumes/${logical}.tar.gz")"
+      remote_bash "docker run --rm -v $(printf '%q' "$src"):/from:ro $(printf '%q' "$ARCHIVE_IMAGE") tar -C /from -czf - ." >"${SNAPSHOT_DIR}/volumes/${logical}.tar.gz"
+      gzip -t "${SNAPSHOT_DIR}/volumes/${logical}.tar.gz"
+    fi
+    return
+  fi
+  log "Remote bind mount ${src} missing; trying named volume"
+  archive_volume_remote "$logical"
+}
+
+restore_bind_local() {
+  local logical=$1
+  local dest snapdir tarin
+  dest="$(bind_item_dir "$DATA_ROOT" "$logical")"
+  snapdir="${SNAPSHOT_DIR}/data/${logical}"
+  tarin="${SNAPSHOT_DIR}/volumes/${logical}.tar.gz"
+  if [[ -d "$snapdir" ]]; then
+    log "Restoring bind mount ${dest} from ${snapdir}"
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+      log "DRY-RUN rsync ${snapdir}/ ${dest}/; chown 82:82"
+      return
+    fi
+    mkdir -p "$dest" 2>/dev/null || true
+    if command -v rsync >/dev/null 2>&1 && [[ -d "$dest" && -w "$dest" ]] && rsync_local_trees "$snapdir" "$dest"; then
+      chown_data_dir "$dest"
+    else
+      docker run --rm -v "${dest}:/to" -v "${snapdir}:/from:ro" "$ARCHIVE_IMAGE" \
+        sh -c 'set -eu; find /to -mindepth 1 -maxdepth 1 -exec rm -rf {} +; cp -a /from/. /to/; chown -R 82:82 /to || true'
+    fi
+    return
+  fi
+  if [[ -f "$tarin" ]]; then
+    log "Restoring ${dest} from tar ${tarin}"
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+      log "DRY-RUN extract ${tarin} into ${dest}"
+      return
+    fi
+    mkdir -p "$dest"
+    gzip -t "$tarin"
+    docker run --rm \
+      -v "${dest}:/to" \
+      -v "${SNAPSHOT_DIR}/volumes:/from:ro" \
+      "$ARCHIVE_IMAGE" \
+      sh -c "set -eu
+        find /to -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+        tar -C /to -xzf /from/${logical}.tar.gz
+        chown -R 82:82 /to || true"
+    return
+  fi
+  restore_volume_local "$logical"
+}
+
+# Cron path: rsync remote SHOPWARE_DATA_ROOT/<item> → local (no snapshot tree).
+sync_bind_from_remote() {
+  local logical=$1
+  local src dest
+  src="$(bind_item_dir "$REMOTE_DATA_ROOT" "$logical")"
+  dest="$(bind_item_dir "$DATA_ROOT" "$logical")"
+  log "Rsync ${SSH_TARGET}:${src}/ → ${dest}/"
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    log "DRY-RUN rsync -az --delete ${SSH_TARGET}:${src}/ ${dest}/; chown 82:82"
+    return
+  fi
+  mkdir -p "$dest" 2>/dev/null || true
+  if remote_dir_exists "$src" && command -v rsync >/dev/null 2>&1 && [[ -d "$dest" && -w "$dest" ]]; then
+    if rsync_from_remote_tree "$src" "$dest"; then
+      chown_data_dir "$dest"
+      return
+    fi
+    log "rsync into ${dest} failed (permissions?); tar via SSH + docker extract"
+  fi
+  if remote_dir_exists "$src"; then
+    remote_bash "docker run --rm -v $(printf '%q' "$src"):/from:ro $(printf '%q' "$ARCHIVE_IMAGE") tar -C /from -czf - ." \
+      | docker run --rm -i -v "${dest}:/to" "$ARCHIVE_IMAGE" \
+        sh -c 'set -eu; find /to -mindepth 1 -maxdepth 1 -exec rm -rf {} +; tar -C /to -xzf -; chown -R 82:82 /to || true'
+    return
+  fi
+  log "Remote bind mount ${src} missing; named-volume fallback into snapshot then restore"
+  archive_volume_remote "$logical"
+  restore_bind_local "$logical"
 }
 
 stop_app_containers() {
@@ -1005,7 +1205,7 @@ do_snapshot() {
     fi
     local vol
     for vol in "${WANT_VOLUMES[@]+"${WANT_VOLUMES[@]}"}"; do
-      archive_volume_local "$vol"
+      snapshot_bind_local "$vol"
     done
     write_manifest
     log "Snapshot written to ${SNAPSHOT_DIR}"
@@ -1013,17 +1213,18 @@ do_snapshot() {
   fi
 
   probe_ssh
+  resolve_remote_data_root
   local csv
   csv="$(data_csv_effective)"
   if [[ "$DRY_RUN" -eq 1 ]]; then
-    log "Would snapshot from ${SSH_TARGET} (--data ${csv}) via remote deploy/sync-runtime.sh or streamed docker tar/SSH"
+    log "Would snapshot from ${SSH_TARGET} (--data ${csv}) bind-mounts under ${REMOTE_DATA_ROOT}"
     resolve_project_name
     if [[ "$WANT_DB" -eq 1 ]]; then
       dump_db_remote
     fi
     local vol
     for vol in "${WANT_VOLUMES[@]+"${WANT_VOLUMES[@]}"}"; do
-      archive_volume_remote "$vol"
+      snapshot_bind_remote "$vol"
     done
     write_manifest
     return
@@ -1035,14 +1236,14 @@ do_snapshot() {
     return
   fi
 
-  log "Remote deploy/sync-runtime.sh not found; streaming dump/tar over SSH"
+  log "Remote deploy/sync-runtime.sh not found; streaming dump/rsync over SSH"
   resolve_remote_project_name
   if [[ "$WANT_DB" -eq 1 ]]; then
     dump_db_remote
   fi
   local vol
   for vol in "${WANT_VOLUMES[@]+"${WANT_VOLUMES[@]}"}"; do
-    archive_volume_remote "$vol"
+    snapshot_bind_remote "$vol"
   done
   write_manifest
   log "Snapshot written to ${SNAPSHOT_DIR}"
@@ -1061,19 +1262,35 @@ do_restore() {
   fi
   local vol
   for vol in "${WANT_VOLUMES[@]+"${WANT_VOLUMES[@]}"}"; do
-    restore_volume_local "$vol"
+    restore_bind_local "$vol"
   done
   start_stopped_app
   post_restore_hints
-  log "Restore finished into ${COMPOSE_DIR} (SYNC_ENV=${SYNC_ENV:-unset})"
+  log "Restore finished into ${COMPOSE_DIR} data_root=${DATA_ROOT} (SYNC_ENV=${SYNC_ENV:-unset})"
 }
 
 do_sync() {
   if [[ "$SOURCE_IS_LOCAL" -eq 1 ]]; then
     log "sync --from local snapshots this host then restores the same files (pipeline check). Prefer --from <live-alias> on staging."
+    do_snapshot
+    do_restore
+    return
   fi
-  do_snapshot
-  do_restore
+  probe_ssh
+  resolve_remote_data_root
+  resolve_project_name
+  stop_app_containers
+  if [[ "$WANT_DB" -eq 1 ]]; then
+    dump_db_remote
+    restore_db_local
+  fi
+  local vol
+  for vol in "${WANT_VOLUMES[@]+"${WANT_VOLUMES[@]}"}"; do
+    sync_bind_from_remote "$vol"
+  done
+  start_stopped_app
+  post_restore_hints
+  log "Sync finished from ${FROM} → ${DATA_ROOT} (SYNC_ENV=${SYNC_ENV:-unset})"
 }
 
 if [[ "$COMMAND" == "restore" || "$COMMAND" == "sync" ]]; then
@@ -1085,7 +1302,7 @@ ensure_image_for_compose
 ensure_snapshot_dir
 lock_sync
 
-log "Runtime data ${COMMAND}  from=${FROM}  data=$(data_csv_effective)  env=${SYNC_ENV:-unset}  dry-run=${DRY_RUN}"
+log "Runtime data ${COMMAND}  from=${FROM}  data=$(data_csv_effective)  env=${SYNC_ENV:-unset}  data_root=${DATA_ROOT}  dry-run=${DRY_RUN}"
 if [[ "$SOURCE_IS_LOCAL" -eq 0 ]]; then
   log "SSH ${SSH_TARGET} port ${SYNC_SSH_PORT:-22}  remote=${REMOTE_PATH}"
 fi

@@ -20,4 +20,4 @@ docker compose -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/comp
 
 (`deploy/vps-release.sh` runs that from the shop root.)
 
-VPS runtime DB/volume pull (no object storage): `deploy/sync-runtime.sh` — see `deploy/sync-runtime.md`.
+VPS runtime DB + bind-mount pull (no object storage): `deploy/sync-runtime.sh` — see `deploy/sync-runtime.md`. Uploads live under `SHOPWARE_DATA_ROOT`.

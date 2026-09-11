@@ -13,7 +13,7 @@
     VPS/CD: files under <comment>deploy/</comment>
     (<comment>deploy/compose.yaml</comment>, <comment>deploy/compose.prod.yaml</comment>,
     <comment>deploy/compose.vps.yaml</comment>).
-    Runtime DB/volume copy between VPS hosts:
+    Runtime DB/bind-mount copy between VPS hosts:
     <comment>deploy/sync-runtime.sh</comment> (see <comment>deploy/sync-runtime.md</comment>).
 
     You MUST require <comment>shopware/docker</comment> in the same Composer command as
