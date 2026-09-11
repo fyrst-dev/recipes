@@ -16,7 +16,7 @@ After the Flex compiler workflow has run on `main`:
 https://raw.githubusercontent.com/fyrst-dev/recipes/flex/main/index.json
 ```
 
-The workflow writes the compiled index to the `flex/main` branch (force-pushed on every update). That URL 404s until the first successful run.
+The workflow writes the compiled index to the `flex/main` branch (force-pushed on every update). That URL is a stub `{}` until the first successful compiler run, then it lists `fyrst/shopware-cd` and recipe payloads.
 
 ## Configure a shop (Composer)
 
@@ -70,8 +70,9 @@ composer recipes:update fyrst/shopware-cd
 
 `.github/workflows/flex-update.yml` calls [symfony/recipes `callable-flex-update.yml`](https://github.com/symfony/recipes/blob/main/.github/workflows/callable-flex-update.yml) with `contents: write` so `GITHUB_TOKEN` can force-push the `flex/main` branch.
 
-- The **first push to `main` that includes this workflow** must run **Update Flex endpoint**. Until that job succeeds, `index.json` does not exist.
-- If GitHub Actions is **disabled** for the `fyrst-dev` org or this repository, the compiler never runs and shops cannot load the endpoint. Enable Actions (org **Settings → Actions → General**, and the same at repo level), then re-run the workflow or push an empty commit on `main`.
+- The callable workflow runs `git switch flex/main`. That branch **must already exist** (orphan branch with a stub `index.json`). Without it, the first run fails with `fatal: invalid reference: flex/main`.
+- The **first push to `main` that includes this workflow** must run **Update Flex endpoint**. Until that job succeeds, shops should not rely on the endpoint.
+- If GitHub Actions is **disabled** for the `fyrst-dev` org or this repository, the compiler never runs and shops cannot load recipes. Enable Actions (org **Settings → Actions → General**, and the same at repo level), then re-run the workflow or push an empty commit on `main`.
 - Repo **Settings → Actions → General → Workflow permissions** should allow the job’s `permissions: contents: write` (do not force a read-only token that cannot push `flex/main`).
 - Closed pull requests are cleaned up by `.github/workflows/flex-cleanup.yml` (drops the temporary `flex/pull-<n>` testing ref).
 
