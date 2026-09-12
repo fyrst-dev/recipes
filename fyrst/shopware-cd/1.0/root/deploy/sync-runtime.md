@@ -136,7 +136,19 @@ Overlapping runs are blocked with `flock` on `var/runtime-sync.lock`.
 ## After restore
 
 - The script tries `bin/console cache:clear` via compose `web` and **does not fail the sync** if that errors.
-- **Sales-channel URLs still point at the source.** There is no single Shopware core command that is safe for every project. Set `SYNC_APP_URL` (or rely on `APP_URL` in `.env`) so the log prints the destination URL, then rewrite `sales_channel_domain` in admin or SQL. Optional: `SYNC_POST_RESTORE_CMD` for a shop-specific console/SQL hook (non-fatal).
+- **Sales-channel domains are not rewritten unless you opt in.** Default behaviour is unchanged: the restored DB still has the source (usually live) `sales_channel_domain.url` rows.
+- **Opt-in rewrite** (staging / playground / dev only — **hard-refused on live**, including `SYNC_ALLOW_LIVE_RESTORE=1`):
+
+  ```bash
+  # replace scheme+host(+port) on every sales_channel_domain.url; keep the path
+  SYNC_REWRITE_APP_URL=https://staging.example.com
+
+  # or a 1:1 prefix map (longest match first) when shops have several origins
+  # SYNC_REWRITE_URL_MAP=https://shop.example.com=https://staging.example.com,https://b2b.example.com=https://b2b.staging.example.com
+  ```
+
+  After the DB restore the script runs controlled `UPDATE sales_channel_domain` SQL (Shopware 6.x storefront matching uses that column). It does **not** half-update media CDN, plugin `system_config`, or payment/shipping webhook URLs — those still need **manual review**. Optional: `SYNC_POST_RESTORE_CMD` for a shop-specific extra hook (non-fatal).
+- Without the rewrite env, set `SYNC_APP_URL` (or rely on `APP_URL` in `.env`) so the log prints the destination URL if you rewrite in admin/SQL yourself.
 
 ## Safety
 

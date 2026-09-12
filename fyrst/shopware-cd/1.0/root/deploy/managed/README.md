@@ -1,18 +1,22 @@
-# Optional deploy: managed container host
+# Planned / not implemented: managed container host
 
-Same Shopware **image** as the Compose/VPS path. Use `shopware/docker`'s `docker/Dockerfile` only. Do **not** add a second Dockerfile.
+**Status: planned.** This path is **not implemented**. CI does not run a managed deploy job. Setting `DEPLOY_TARGET=managed` is **not** a supported switch — it does not deploy, and it must not skip the Compose/VPS job.
+
+Same Shopware **image** as the Compose/VPS path remains the intended future contract (`shopware/docker`'s `docker/Dockerfile` only). Do **not** add a second Dockerfile.
 
 Locked process: [Shopware Create & Continuous Deploy](https://app.clickup.com/90151931897/docs/2kyqjkzt-915)
 
-## When to use
+## Why this page exists
 
-The platform starts/restarts containers for you (managed Kubernetes-like runtimes, PaaS-style hosts, mittwald-style container hosting, etc.). CI still:
+A future managed host (PaaS-style / mittwald-style container runtime) would reuse the same image and `shopware-deployment-helper` flags. Until a real host is chosen and wired, treat Compose/VPS (`deploy/vps-release.sh`) as the **only** supported deploy path.
 
-1. Builds with `shopware-cli project ci` in `docker/Dockerfile` (from `shopware/docker`)
-2. Pushes `:sha` / `:latest` / `:semver`
-3. Runs Deployment Helper as a one-shot/setup job against that image
+## What would stay the same (when implemented)
 
-## What changes
+1. Build with `shopware-cli project ci` in `docker/Dockerfile` (from `shopware/docker`)
+2. Push `:sha` / `:latest` / `:semver`
+3. Run Deployment Helper as a one-shot/setup job against that image
+
+## What would change (not built)
 
 Only the **deploy job** (and maybe which registry you push to):
 
@@ -20,20 +24,13 @@ Only the **deploy job** (and maybe which registry you push to):
 - Trigger their deploy API / CLI / UI instead of SSH + Compose
 - Map runtime env (`APP_URL`, `DATABASE_URL`, `APP_SECRET`, `INSTALL_ADMIN_*`) in the host’s secret store
 
-## CI switch
+## CI
 
-Use **`DEPLOY_TARGET`** (repository variable, not a secret):
+The former `deploy_managed` stub jobs in `.github/workflows/cd.yaml` and `.gitlab-ci.yaml` were removed (recipes #19). They always `exit 1` after pretending to be a deploy path. Do not re-add a failing stub.
 
-| Value | Deploy job |
-| --- | --- |
-| unset / `compose` | Primary: SSH + Compose (`deploy/vps-release.sh`) |
-| `managed` | Skip Compose SSH; run the managed job instead |
+`DEPLOY_TARGET` is reserved for a future implementation. It is ignored today. The Compose/VPS job is the supported last mile.
 
-(`DEPLY_TARGET` is a typo — do not use it.)
-
-GitHub: Actions variable `DEPLOY_TARGET`. GitLab: CI/CD variable `DEPLOY_TARGET`.
-
-## What to fill in per host (TODOs)
+## What to fill in per host (when a real host exists)
 
 - [ ] Registry URL the platform pulls from
 - [ ] Deploy token / kubeconfig / host CLI credentials (CI secret)
@@ -48,9 +45,7 @@ GitHub: Actions variable `DEPLOY_TARGET`. GitLab: CI/CD variable `DEPLOY_TARGET`
 - [ ] Health/smoke URL after rollout
 - [ ] Rollback: redeploy the previous `:sha` tag (`deploy/vps-rollback.sh` on Compose)
 
-The managed jobs in `.github/workflows/cd.yaml` and `.gitlab-ci.yaml` are **stubs**: they fail with a clear message until you replace the script with the host’s CLI. That is intentional — do not copy a fake happy-path.
-
-## Keep identical across hosts
+## Keep identical across hosts (future)
 
 - `docker/Dockerfile` (from `shopware/docker`) / `PHP_VERSION=8.3`
 - `.shopware-project.yaml` (owned by `shopware-cli project create` / the CLI, not this recipe)

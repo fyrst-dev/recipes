@@ -40,6 +40,12 @@
     <comment>DATA="${SHOPWARE_DATA_BASE:-/var/lib/shopware/data}/${SHOPWARE_SHOP_ID}/${SHOPWARE_DEPLOY_ENV}"</comment>
     then <comment>mkdir -p "${DATA}"/{files,media,thumbnail,theme,sitemap}</comment>
     then <comment>chown -R 82:82 "${DATA}"</comment>.
+    Live profiles: uncomment
+    <comment>COMPOSE_PROFILES=redis,worker,scheduler</comment>
+    in <comment>.env</comment> (worker + scheduler; redis if used). Staging leaves
+    this unset unless you need async tasks.
+    <comment>deploy/vps-release.sh</comment> warns on live when it is empty; it does
+    not auto-enable.
     Several shops or live+staging on one VPS share the host; shop id + env
     keep stacks isolated.
 

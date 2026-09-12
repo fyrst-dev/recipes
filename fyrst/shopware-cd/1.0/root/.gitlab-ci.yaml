@@ -38,8 +38,11 @@
 #   VPS_SSH_PORT             optional, default 22
 #
 # Optional:
-#   DEPLOY_TARGET             "managed" skips SSH Compose (see deploy/managed/README.md)
 #   SMOKE_URL
+#
+# Managed host deploy is planned / not implemented (recipes #19).
+# DEPLOY_TARGET=managed is not a supported switch. There is no deploy_managed
+# job. See deploy/managed/README.md.
 #
 # Runner: build uses Docker-in-Docker (privileged). Swap to kaniko/buildah
 # if the runner cannot run dind — keep docker/Dockerfile and the same tags.
@@ -180,8 +183,6 @@ deploy:
     needs: ["push"]
     resource_group: production
     rules:
-        -   if: $DEPLOY_TARGET == "managed"
-            when: never
         -   if: $CI_COMMIT_TAG
         -   if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
     before_script:
@@ -231,24 +232,3 @@ deploy:
                 echo "Smoke check failed for ${SMOKE_URL}" >&2
                 exit 1
             fi
-
-deploy_managed:
-    stage: deploy
-    image: alpine:3.21
-    interruptible: false
-    timeout: 15m
-    needs: ["push"]
-    resource_group: production
-    rules:
-        -   if: $DEPLOY_TARGET == "managed" && $CI_COMMIT_TAG
-        -   if: $DEPLOY_TARGET == "managed" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-    before_script:
-        -   !reference [.registry_env, before_script]
-    script:
-        -   |
-            echo "DEPLOY_TARGET=managed — same image, different last mile."
-            echo "Image: ${IMAGE}:${CI_COMMIT_SHA}"
-            echo "Replace this job with the host CLI/API. See deploy/managed/README.md."
-            echo "Setup command stays:"
-            echo "  vendor/bin/shopware-deployment-helper run --skip-theme-compile --skip-assets-install"
-            exit 1

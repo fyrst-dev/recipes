@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Acceptance checks for VPS production hardening (#10, #13–#16).
+# Acceptance checks for VPS production hardening (#10, #13–#16)
+# plus day-2 ops extras used by #18 / #19.
 # No Docker required. Run from anywhere:
 #   bash fyrst/shopware-cd/1.0/tests/vps-hardening.test.sh
 
@@ -31,6 +32,7 @@ assert_exec() {
 echo "==> bash -n"
 for s in \
   "$DEPLOY/lib/vps-common.sh" \
+  "$DEPLOY/lib/sync-rewrite.sh" \
   "$DEPLOY/vps-release.sh" \
   "$DEPLOY/vps-rollback.sh" \
   "$DEPLOY/backup-runtime.sh" \
@@ -46,7 +48,7 @@ done
 
 if command -v shellcheck >/dev/null 2>&1; then
   echo "==> shellcheck"
-  if shellcheck -x "$DEPLOY/vps-release.sh" "$DEPLOY/vps-rollback.sh" "$DEPLOY/backup-runtime.sh" "$DEPLOY/lib/vps-common.sh"; then
+  if shellcheck -x "$DEPLOY/vps-release.sh" "$DEPLOY/vps-rollback.sh" "$DEPLOY/backup-runtime.sh" "$DEPLOY/lib/vps-common.sh" "$DEPLOY/lib/sync-rewrite.sh"; then
     pass "shellcheck release/rollback/backup/lib"
   else
     fail "shellcheck"
@@ -367,6 +369,71 @@ if [[ "$down" -ne 0 ]]; then
   pass "curl probe fails when nothing listens on the port"
 else
   fail "curl probe should fail when port is down"
+fi
+
+echo "==> live Compose profiles warning (#18)"
+if grep -q 'Uncomment on live' "$ROOT/root/.env.example" \
+  && grep -q 'COMPOSE_PROFILES=redis,worker,scheduler' "$ROOT/root/.env.example"; then
+  pass ".env.example states live COMPOSE_PROFILES recommendation"
+else
+  fail ".env.example missing live profiles recommendation"
+fi
+if grep -q 'COMPOSE_PROFILES=redis,worker,scheduler' "$ROOT/post-install.txt" \
+  && grep -q 'does not auto-enable' "$DEPLOY/README.md"; then
+  pass "post-install + deploy README mention profiles"
+else
+  fail "post-install / README missing profiles"
+fi
+SHOPWARE_DEPLOY_ENV=live
+unset COMPOSE_PROFILES || true
+warn="$(vps_warn_empty_live_profiles 2>&1 || true)"
+if printf '%s' "$warn" | grep -q 'WARNING: SHOPWARE_DEPLOY_ENV=live but COMPOSE_PROFILES is empty' \
+  && printf '%s' "$warn" | grep -q 'COMPOSE_PROFILES=redis,worker,scheduler'; then
+  pass "vps-release warns on live with empty COMPOSE_PROFILES"
+else
+  fail "live empty-profiles warning was: $warn"
+fi
+SHOPWARE_DEPLOY_ENV=staging
+unset COMPOSE_PROFILES || true
+warn="$(vps_warn_empty_live_profiles 2>&1 || true)"
+if [[ -z "$warn" ]]; then
+  pass "no profiles warning on staging (does not auto-enable worker)"
+else
+  fail "staging must not warn about empty profiles: $warn"
+fi
+SHOPWARE_DEPLOY_ENV=live
+COMPOSE_PROFILES=redis,worker,scheduler
+warn="$(vps_warn_empty_live_profiles 2>&1 || true)"
+if [[ -z "$warn" ]]; then
+  pass "no warning when live profiles are set"
+else
+  fail "live with profiles should not warn: $warn"
+fi
+unset COMPOSE_PROFILES || true
+
+echo "==> managed host planned, no failing stub (#19)"
+if grep -q 'deploy_managed:' "$ROOT/root/.github/workflows/cd.yaml" \
+  || grep -q 'deploy_managed:' "$ROOT/root/.gitlab-ci.yaml"; then
+  fail "CI still has a deploy_managed job"
+else
+  pass "CI has no deploy_managed job"
+fi
+if grep -q 'vars.DEPLOY_TARGET != .managed' "$ROOT/root/.github/workflows/cd.yaml" \
+  || grep -q 'DEPLOY_TARGET == "managed"' "$ROOT/root/.gitlab-ci.yaml"; then
+  fail "CI still gates Compose deploy on DEPLOY_TARGET=managed"
+else
+  pass "Compose deploy is not skipped for a planned managed target"
+fi
+if grep -qi 'planned' "$DEPLOY/managed/README.md" \
+  && grep -qi 'not implemented' "$DEPLOY/managed/README.md"; then
+  pass "managed README is planned / not implemented"
+else
+  fail "managed README still reads as a supported path"
+fi
+if grep -q 'exit 1' "$DEPLOY/managed/README.md" && grep -q 'Replace this job' "$ROOT/root/.github/workflows/cd.yaml"; then
+  fail "managed stub fail message still in CI"
+else
+  pass "CI does not pretend managed deploy works then fail"
 fi
 
 if [[ "$FAILS" -ne 0 ]]; then

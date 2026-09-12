@@ -9,6 +9,7 @@
 
 vps_log() { printf '==> %s\n' "$*"; }
 vps_err() { printf 'ERROR: %s\n' "$*" >&2; }
+vps_warn() { printf 'WARNING: %s\n' "$*" >&2; }
 vps_die() { vps_err "$@"; exit 1; }
 
 VPS_COMPOSE_FILES=(
@@ -121,6 +122,22 @@ vps_parse_profiles() {
     fi
     PROFILE_ARGS+=(--profile "$p")
   done
+}
+
+# Loud warning only. Never auto-enables redis/worker/scheduler (#18).
+vps_warn_empty_live_profiles() {
+  local env_lc
+  env_lc="$(printf '%s' "${SHOPWARE_DEPLOY_ENV:-}" | tr '[:upper:]' '[:lower:]')"
+  if [[ "$env_lc" != "live" ]]; then
+    return
+  fi
+  if [[ -n "${COMPOSE_PROFILES:-}" ]]; then
+    return
+  fi
+  vps_warn "SHOPWARE_DEPLOY_ENV=live but COMPOSE_PROFILES is empty."
+  vps_warn "redis / worker / scheduler will not start. Recommended live default:"
+  vps_warn "  COMPOSE_PROFILES=redis,worker,scheduler"
+  vps_warn "Uncomment that in .env (do not auto-enable). See deploy/README.md."
 }
 
 vps_has_service() {

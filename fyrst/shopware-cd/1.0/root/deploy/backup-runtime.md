@@ -70,7 +70,7 @@ Do this on **staging** first (every quarter). Live disaster recovery is the same
 
 1. Pick an artifact stamp from `$BACKUP_TARGET/<shop>/staging/` (or copy a live artifact to the staging host).
 2. `bash deploy/backup-runtime.sh restore --from <stamp> --i-understand-this-restores-this-host`
-3. Confirm storefront/admin, then rewrite `sales_channel_domain` if the dump still has live URLs (`SYNC_APP_URL` / `APP_URL` reminder from sync).
+3. Confirm storefront/admin, then rewrite `sales_channel_domain` if the dump still has live URLs. On staging, `SYNC_REWRITE_APP_URL` (or `SYNC_REWRITE_URL_MAP`) in `deploy/sync.env` does that after restore; it is refused on live. Payment/shipping webhooks still need a manual check.
 4. Record the date on the ClickUp Secrets & checklist page.
 
 Live DR (only when live is already broken):
