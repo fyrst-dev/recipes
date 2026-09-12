@@ -12,9 +12,10 @@ services:
         env_file:
             -   ../.env
             -   ../.env.prod
-        ports:
-            # Loopback only. Host Caddy (deploy/edge/Caddyfile) terminates TLS.
-            # Unsupported override (knowingly public app port): HTTP_BIND=0.0.0.0
+        ports: !override
+            # Replaces compose.yaml's 0.0.0.0 mapping (Compose appends ports
+            # lists unless !override). Loopback only; host Caddy terminates TLS.
+            # Unsupported live override: HTTP_BIND=0.0.0.0
             -   "${HTTP_BIND:-127.0.0.1}:${HTTP_PORT:-8000}:8000"
         healthcheck:
             # Same probe as compose.yaml; longer grace for cold VPS + setup helper.

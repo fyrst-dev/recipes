@@ -163,7 +163,7 @@ FPM/Caddy/nginx `shopware/docker-base` images install `curl`; FrankenPHP may not
 
 ## Edge / TLS (Caddy)
 
-Default prod publish is `127.0.0.1:${HTTP_PORT:-8000}:8000` (`HTTP_BIND` override). Copy-paste host Caddyfile: **[edge/Caddyfile](edge/Caddyfile)**. Multi-shop and ACME: **[edge/README.md](edge/README.md)**. Put edge in front **before go-live**.
+Default prod publish is `127.0.0.1:${HTTP_PORT:-8000}:8000` (`HTTP_BIND` override). `compose.prod.yaml` uses `ports: !override` so Compose does **not** keep the base `0.0.0.0` mapping from `compose.yaml`. Copy-paste host Caddyfile: **[edge/Caddyfile](edge/Caddyfile)**. Multi-shop and ACME: **[edge/README.md](edge/README.md)**. Put edge in front **before go-live**.
 
 ## Off-host backups
 

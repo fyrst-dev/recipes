@@ -90,10 +90,10 @@ else
 fi
 
 echo "==> prod bind (#16)"
-if grep -q '\${HTTP_BIND:-127.0.0.1}:${HTTP_PORT:-8000}:8000' "$DEPLOY/compose.prod.yaml"; then
-  pass "prod publish is loopback by default"
+if grep -q 'ports: !override' "$DEPLOY/compose.prod.yaml" && grep -q '\${HTTP_BIND:-127.0.0.1}:${HTTP_PORT:-8000}:8000' "$DEPLOY/compose.prod.yaml"; then
+  pass "prod publish is loopback by default (!override)"
 else
-  fail "compose.prod.yaml does not bind 127.0.0.1"
+  fail "compose.prod.yaml does not bind 127.0.0.1 with !override"
 fi
 if grep -Fq 'ports: []' "$DEPLOY/compose.prod.yaml"; then
   pass "mysql ports: [] in compose.prod.yaml"
@@ -283,6 +283,44 @@ if [[ "$rc" -ne 0 ]] && printf '%s' "$out" | grep -q 'Refusing restore/sync on a
   pass "sync restore still refuses live (not a backup)"
 else
   fail "sync live restore rc=$rc out=$out"
+fi
+
+echo "==> docker compose config (optional)"
+if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+  CFG="$TMP/compose-cfg"
+  mkdir -p "$CFG/deploy"
+  cp "$DEPLOY/compose.yaml" "$DEPLOY/compose.prod.yaml" "$DEPLOY/compose.vps.yaml" "$CFG/deploy/"
+  cat >"$CFG/.env" <<'EOF'
+IMAGE=ghcr.io/example/acme
+IMAGE_TAG=deadbeef
+SHOPWARE_SHOP_ID=acme
+SHOPWARE_DEPLOY_ENV=live
+MYSQL_USER=shop
+MYSQL_PASSWORD=shop
+MYSQL_ROOT_PASSWORD=root
+EOF
+  : >"$CFG/.env.prod"
+  set +e
+  (cd "$CFG" && docker compose --env-file .env -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/compose.vps.yaml config --format json >"$CFG/out.json")
+  rc=$?
+  set -e
+  if [[ "$rc" -eq 0 ]] && python3 - "$CFG/out.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+ports = d["services"]["web"].get("ports") or []
+ok = len(ports) == 1 and ports[0].get("host_ip") == "127.0.0.1"
+mysql = d["services"]["mysql"].get("ports")
+hc = (d["services"]["web"].get("healthcheck") or {}).get("test") or []
+path_ok = any("api/_info/health-check" in str(x) for x in hc)
+raise SystemExit(0 if ok and mysql in (None, []) and path_ok else 1)
+PY
+  then
+    pass "merged compose: one 127.0.0.1:8000 mapping, mysql unpublished, health path set"
+  else
+    fail "merged compose ports/health not as required (rc=$rc)"
+  fi
+else
+  echo "docker compose not available; skipped merge check"
 fi
 
 echo "==> HTTP probe against mock Shopware health path"
