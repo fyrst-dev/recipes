@@ -1,0 +1,20 @@
+# fyrst-supported VPS edge: Caddy on the host, TLS + reverse_proxy to Shopware.
+#
+# Locked pattern (see deploy/README.md):
+#   compose.prod.yaml publishes 127.0.0.1:${HTTP_PORT:-8000}:8000
+#   this Caddyfile terminates HTTPS on 443 and proxies to that loopback port
+#   MySQL stays compose.prod.yaml ports: [] (never publish 3306)
+#
+# Copy-paste: replace shop.example.com with the live hostname, then:
+#   sudo cp deploy/edge/Caddyfile /etc/caddy/Caddyfile
+#   sudo systemctl reload caddy
+#
+# DNS A/AAAA for the hostname must point at this VPS. Caddy obtains a
+# Let's Encrypt certificate automatically (ports 80 and 443 open).
+#
+# This is NOT the in-image Caddy that already listens on :8000 inside `web`.
+
+shop.example.com {
+	encode gzip zstd
+	reverse_proxy 127.0.0.1:8000
+}

@@ -20,7 +20,10 @@
 
 ## Model
 
-- **web** — Shopware image (`ghcr.io/shopware/docker-base` + project artifact), port 8000
+- **web** — Shopware image (`ghcr.io/shopware/docker-base` + project artifact), port 8000 (prod: loopback only)
+- **setup** — one-shot `shopware-deployment-helper` (profile `setup`)
+- **mysql** — bundled in Compose, or delete the service and point `DATABASE_URL` at DBaaS. Prod overlay keeps `ports: []`.
+- **redis** / **worker** / **scheduler** — optional Compose profiles
 - **setup** — one-shot `shopware-deployment-helper` (profile `setup`)
 - **mysql** — bundled in Compose, or delete the service and point `DATABASE_URL` at DBaaS
 - **redis** / **worker** / **scheduler** — optional Compose profiles
@@ -60,8 +63,9 @@
    project name from shop id + env).
 
 7. `docker login` to that registry on the VPS (or use a credential helper / `~/.docker/config.json`).
-8. Put a reverse proxy in front of `HTTP_PORT` (TLS). Do not expose MySQL.
-9. Store the previous image tag for rollback (the release script writes `.deployed-tag` / `.previous-tag`).
+8. Put **host Caddy** in front of loopback `HTTP_PORT` (TLS). See **[edge/README.md](edge/README.md)** and `deploy/edge/Caddyfile`. Do not expose MySQL (`compose.prod.yaml` keeps `ports: []`).
+9. Store the previous image tag for rollback (the release script writes `.deployed-tag` / `.previous-tag`). Use `deploy/vps-rollback.sh` — do not re-run a failed tag via CI unless you mean to.
+10. Copy `deploy/backup.env.example` → `deploy/backup.env` on **live** and enable nightly `deploy/backup-runtime.sh`. Sync is not a backup.
 
 ## Several shops / live+staging on the same VPS
 
@@ -94,7 +98,10 @@ Named volumes become `acme-live_mysql_data`, `acme-staging_mysql_data`, … — 
 
    (via `docker compose --env-file .env -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/compose.vps.yaml --profile setup run --rm --no-build setup`)
 5. Recreate `web` with `--no-build`
-6. Optional `SMOKE_URL` check
+6. Optional `SMOKE_URL` check. **Writes `.deployed-tag` only after success.**
+7. On smoke failure: always prints
+   `IMAGE_TAG=$(cat .previous-tag) bash deploy/vps-rollback.sh`
+   and **auto-runs that rollback when `SHOPWARE_DEPLOY_ENV=live`** (default on). Staging/dev stay manual unless `ROLLBACK_ON_SMOKE_FAIL=1`. Release still exits 1 after a successful auto-rollback so CI does not treat the bad tag as live. First deploys with no `.previous-tag` cannot roll back.
 
 Manual equivalent:
 
@@ -134,12 +141,39 @@ The helper detects a fresh database vs an existing shop:
 
 ## Rollback
 
+`deploy/vps-rollback.sh` reads `.previous-tag` (refuses if missing/empty), keeps `IMAGE` from env/`.env`, and runs the **same** compose stack and order as release: pull → mysql/redis → setup profile → recreate `web` → extra profiles. Pull + `--no-build` only. Optional `SMOKE_URL`. Writes `.deployed-tag` only after success.
+
 ```bash
-export IMAGE_TAG=$(cat .previous-tag)
-bash ./deploy/vps-release.sh
+# Always printed on smoke failure; this is the supported one-liner:
+IMAGE_TAG=$(cat .previous-tag) bash deploy/vps-rollback.sh
+
+# Preview (no docker)
+bash ./deploy/vps-rollback.sh --dry-run
 ```
 
-Keep the previous image physically on the host (`docker image prune` with care).
+Manual drill (staging): release tag A → release tag B → rollback restores A (`cat .deployed-tag` is A). Keep the previous image on the host (`docker image prune` with care).
+
+`ROLLBACK_ON_SMOKE_FAIL`: unset → **on for `live`, off otherwise**. Set `0`/`false` to force off on live; `1`/`true` to enable on staging.
+
+## HTTP healthcheck
+
+`web` is healthy only when `GET http://127.0.0.1:8000/api/_info/health-check` succeeds **inside the container** (Shopware Core, `auth_required=false`; the path Shopware documents for Docker `HEALTHCHECK`). That fails if Caddy/nginx/FrankenPHP on 8000 is down or PHP-FPM/FrankenPHP does not run the kernel. It does not use the Docker host network.
+
+FPM/Caddy/nginx `shopware/docker-base` images install `curl`; FrankenPHP may not — the probe falls back to PHP streams. `compose.prod.yaml` uses `start_period: 120s` so a cold VPS after deployment-helper can still become healthy.
+
+## Edge / TLS (Caddy)
+
+Default prod publish is `127.0.0.1:${HTTP_PORT:-8000}:8000` (`HTTP_BIND` override). `compose.prod.yaml` uses `ports: !override` so Compose does **not** keep the base `0.0.0.0` mapping from `compose.yaml`. Copy-paste host Caddyfile: **[edge/Caddyfile](edge/Caddyfile)**. Multi-shop and ACME: **[edge/README.md](edge/README.md)**. Put edge in front **before go-live**.
+
+## Off-host backups
+
+See **[backup-runtime.md](backup-runtime.md)**. Cron on live:
+
+```cron
+20 2 * * * cd /opt/shopware/acme-live && bash deploy/backup-runtime.sh backup
+```
+
+Copy `deploy/backup.env.example` → `deploy/backup.env`. `BACKUP_TARGET` = second disk or SSH. `BACKUP_KEEP_DAYS` (default 14) is implemented. Quarterly restore drill: restore onto staging first; live DR needs `BACKUP_ALLOW_LIVE_RESTORE=1`.
 
 ## Required CI secrets (Compose path)
 
@@ -149,7 +183,7 @@ Typical: `SSH_PRIVATE_KEY`, `VPS_HOST`, `VPS_USER`, `VPS_PATH`, `SSH_KNOWN_HOSTS
 
 ## Runtime data sync
 
-Pull **database + bind-mounted upload trees** (`media`, `files`, `thumbnail`, `theme`, `sitemap` under the derived data root) from another VPS onto this one (usually live → staging). SSH + `mysqldump`/`mariadb-dump` + **rsync of those host directories**. Object storage (S3 and similar) is out of scope. Runtime data stays out of git and out of the app image.
+**Sync is not a backup.** `deploy/sync-runtime.sh` pulls **database + bind-mounted upload trees** from another VPS onto this one (usually live → staging). It refuses `SHOPWARE_DEPLOY_ENV=live` as a consumer. Off-host backups with retention are **[backup-runtime.md](backup-runtime.md)** (`deploy/backup-runtime.sh`, cron on live).
 
 When `SHOPWARE_DATA_ROOT` / `SYNC_DATA_ROOT` are unset, `deploy/sync-runtime.sh` derives
 

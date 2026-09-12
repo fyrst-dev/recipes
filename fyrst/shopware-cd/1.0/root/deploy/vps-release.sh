@@ -14,6 +14,7 @@
 #   SHOPWARE_DATA_BASE     prefix helper (default /var/lib/shopware/data)
 #   COMPOSE_PROJECT_NAME   scripts/docs only; unset → ${SHOPWARE_SHOP_ID}-${SHOPWARE_DEPLOY_ENV}
 #   SHOPWARE_DATA_ROOT     scripts/docs only; unset → $SHOPWARE_DATA_BASE/$SHOPWARE_SHOP_ID/$SHOPWARE_DEPLOY_ENV
+#   ROLLBACK_ON_SMOKE_FAIL 1/0. Unset → on when SHOPWARE_DEPLOY_ENV=live, off otherwise.
 #
 # Compose interpolates project name + bind mounts from shop id + env (and
 # optional SHOPWARE_DATA_BASE). It does not fail when COMPOSE_PROJECT_NAME /
@@ -24,135 +25,84 @@
 #
 # Compose files (always invoked from shop root COMPOSE_DIR):
 #   docker compose --env-file .env -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/compose.vps.yaml
+#
+# On SMOKE_URL failure this script always prints:
+#   IMAGE_TAG=$(cat .previous-tag) bash deploy/vps-rollback.sh
+# and, when auto-rollback is on, runs deploy/vps-rollback.sh (pull + --no-build).
 
 set -euo pipefail
 
-COMPOSE_DIR="${COMPOSE_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
-cd "$COMPOSE_DIR"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=lib/vps-common.sh
+source "${SCRIPT_DIR}/lib/vps-common.sh"
 
-CI_IMAGE="${IMAGE:-}"
-CI_IMAGE_TAG="${IMAGE_TAG:-}"
-CI_SMOKE_URL="${SMOKE_URL:-}"
-CI_PROFILES="${COMPOSE_PROFILES:-}"
+usage() {
+  cat <<'EOF'
+Usage: deploy/vps-release.sh [--dry-run]
 
-if [[ -f .env ]]; then
-  set -a
-  # shellcheck disable=SC1091
-  source .env
-  set +a
-fi
-if [[ -f .env.prod ]]; then
-  set -a
-  # shellcheck disable=SC1091
-  source .env.prod
-  set +a
-fi
+Pull IMAGE:IMAGE_TAG and recreate the VPS stack (--no-build). Writes
+.deployed-tag only after setup/web succeed and optional SMOKE_URL passes.
 
-IMAGE="${CI_IMAGE:-${IMAGE:-}}"
-IMAGE_TAG="${CI_IMAGE_TAG:-${IMAGE_TAG:-}}"
-SMOKE_URL="${CI_SMOKE_URL:-${SMOKE_URL:-}}"
-COMPOSE_PROFILES="${CI_PROFILES:-${COMPOSE_PROFILES:-}}"
-
-: "${IMAGE:?Set IMAGE to the registry repository}"
-: "${IMAGE_TAG:?Set IMAGE_TAG to the git SHA (or previous tag for rollback)}"
-: "${SHOPWARE_SHOP_ID:?Set SHOPWARE_SHOP_ID in .env (stable shop slug, same on live/staging/laptop)}"
-: "${SHOPWARE_DEPLOY_ENV:?Set SHOPWARE_DEPLOY_ENV in .env (live|staging|playground|dev)}"
-
-SHOPWARE_DATA_BASE="${SHOPWARE_DATA_BASE:-/var/lib/shopware/data}"
-if [[ -z "${COMPOSE_PROJECT_NAME:-}" ]]; then
-  COMPOSE_PROJECT_NAME="${SHOPWARE_SHOP_ID}-${SHOPWARE_DEPLOY_ENV}"
-  echo "==> COMPOSE_PROJECT_NAME unset; derived ${COMPOSE_PROJECT_NAME}"
-fi
-if [[ -z "${SHOPWARE_DATA_ROOT:-}" ]]; then
-  SHOPWARE_DATA_ROOT="${SHOPWARE_DATA_BASE}/${SHOPWARE_SHOP_ID}/${SHOPWARE_DEPLOY_ENV}"
-  echo "==> SHOPWARE_DATA_ROOT unset; derived ${SHOPWARE_DATA_ROOT}"
-fi
-
-export IMAGE IMAGE_TAG COMPOSE_PROJECT_NAME SHOPWARE_DATA_ROOT SHOPWARE_SHOP_ID SHOPWARE_DEPLOY_ENV SHOPWARE_DATA_BASE
-
-touch .env.prod
-
-for f in deploy/compose.yaml deploy/compose.prod.yaml deploy/compose.vps.yaml; do
-  if [[ ! -f "$f" ]]; then
-    echo "Missing ${f} (expected under shop root COMPOSE_DIR=${COMPOSE_DIR})" >&2
-    exit 1
-  fi
-done
-
-COMPOSE=(
-  docker compose
-  --env-file .env
-  -f deploy/compose.yaml
-  -f deploy/compose.prod.yaml
-  -f deploy/compose.vps.yaml
-)
-
-PROFILE_ARGS=()
-IFS=',' read -ra RAW_PROFILES <<< "${COMPOSE_PROFILES:-}"
-for p in "${RAW_PROFILES[@]}"; do
-  p="${p// /}"
-  if [[ -z "$p" ]]; then
-    continue
-  fi
-  if [[ "$p" == "setup" ]]; then
-    echo "COMPOSE_PROFILES must not include setup (the script runs that profile itself)" >&2
-    exit 1
-  fi
-  PROFILE_ARGS+=(--profile "$p")
-done
-
-has_service() {
-  "${COMPOSE[@]}" "${PROFILE_ARGS[@]}" config --services 2>/dev/null | grep -qx "$1"
+  --dry-run   Print the compose sequence; do not pull or recreate containers
+EOF
 }
 
-echo "==> Deploying ${IMAGE}:${IMAGE_TAG} from ${COMPOSE_DIR}"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dry-run)
+      export VPS_DRY_RUN=1
+      shift
+      ;;
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    -*)
+      vps_die "Unknown option: $1 (try --help)"
+      ;;
+    *)
+      vps_die "Unexpected argument: $1 (try --help)"
+      ;;
+  esac
+done
+
+vps_bootstrap
+vps_require_image_tag
 
 if [[ -f .deployed-tag ]]; then
   cp .deployed-tag .previous-tag
-  echo "==> Previous tag: $(cat .previous-tag)"
+  vps_log "Previous tag: $(tr -d '[:space:]' < .previous-tag)"
 fi
 
-echo "==> Pulling images"
-"${COMPOSE[@]}" "${PROFILE_ARGS[@]}" pull
+vps_rollout
 
-if has_service mysql; then
-  echo "==> Starting mysql"
-  "${COMPOSE[@]}" up -d --no-build mysql
-fi
-
-if has_service redis; then
-  echo "==> Starting redis"
-  "${COMPOSE[@]}" --profile redis up -d --no-build redis
-fi
-
-echo "==> One-shot setup (shopware-deployment-helper, skip theme/assets)"
-"${COMPOSE[@]}" --profile setup run --rm --no-build setup
-
-echo "==> Recreating web (no build)"
-"${COMPOSE[@]}" up -d --no-build --remove-orphans web
-
-if [[ ${#PROFILE_ARGS[@]} -gt 0 ]]; then
-  echo "==> Starting extra profiles: ${COMPOSE_PROFILES}"
-  "${COMPOSE[@]}" "${PROFILE_ARGS[@]}" up -d --no-build
-fi
-
-printf '%s\n' "$IMAGE_TAG" > .deployed-tag
-
-if [[ -n "${SMOKE_URL:-}" ]]; then
-  echo "==> Smoke ${SMOKE_URL}"
-  ok=0
-  for _ in $(seq 1 30); do
-    if command -v curl >/dev/null 2>&1 && curl -fsS "$SMOKE_URL" >/dev/null; then
-      echo "==> Smoke OK"
-      ok=1
-      break
+if ! vps_smoke; then
+  vps_print_smoke_rollback_hint "${SMOKE_URL}"
+  if vps_should_auto_rollback; then
+    vps_log "ROLLBACK_ON_SMOKE_FAIL on (SHOPWARE_DEPLOY_ENV=${SHOPWARE_DEPLOY_ENV}; live default is on, others off unless ROLLBACK_ON_SMOKE_FAIL=1)"
+    if [[ ! -f .previous-tag ]] || [[ -z "$(tr -d '[:space:]' < .previous-tag 2>/dev/null || true)" ]]; then
+      vps_err "Cannot auto-rollback: .previous-tag missing or empty (first deploy, or no recorded prior tag)"
+      exit 1
     fi
-    sleep 2
-  done
-  if [[ "$ok" -ne 1 ]]; then
-    echo "Smoke check failed for ${SMOKE_URL}" >&2
+    # Rollback reads IMAGE_TAG from .previous-tag; do not pass the failed tag.
+    unset IMAGE_TAG
+    if ! IMAGE="${IMAGE}" SMOKE_URL="${SMOKE_URL:-}" COMPOSE_DIR="${COMPOSE_DIR}" \
+      COMPOSE_PROFILES="${COMPOSE_PROFILES:-}" \
+      bash "${SCRIPT_DIR}/vps-rollback.sh"; then
+      vps_err "Auto-rollback failed. Stack may be on the new tag. Retry: $(vps_rollback_command)"
+      exit 1
+    fi
+    vps_err "Rolled back after smoke failure. Release still exits 1 so CI does not treat the new tag as live."
     exit 1
   fi
+  vps_log "Auto-rollback skipped (SHOPWARE_DEPLOY_ENV=${SHOPWARE_DEPLOY_ENV}; set ROLLBACK_ON_SMOKE_FAIL=1 to enable)"
+  exit 1
 fi
 
-echo "==> Deploy finished ${IMAGE}:${IMAGE_TAG}"
+if [[ "${VPS_DRY_RUN}" -eq 1 ]]; then
+  vps_log "DRY-RUN would write .deployed-tag=${IMAGE_TAG}"
+else
+  vps_write_deployed_tag
+fi
+
+vps_log "Deploy finished ${IMAGE}:${IMAGE_TAG}"

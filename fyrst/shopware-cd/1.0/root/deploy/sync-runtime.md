@@ -1,5 +1,7 @@
 # Runtime data sync (VPS, no object storage)
 
+**This is not a backup.** Sync clones live → staging / playground / dev. It refuses to restore onto live. Off-host backups with retention, checksums, and a quarterly restore drill are **[backup-runtime.md](backup-runtime.md)** (`deploy/backup-runtime.sh`, cron on **live**). Snapshot on live via this script is allowed and is what the backup wrapper calls.
+
 Pull **database + runtime upload trees** from another Shopware VPS onto this one. Typical direction: **live → staging / playground / dev**.
 
 For a **local** `shopware-cli project dev` tree (path remap into `./public/media/`, `./files/`, …; **no database**; never `SHOPWARE_DATA_ROOT` on the laptop), use **`deploy/sync-runtime-local.sh`**. This document is the VPS bind-mount + DB path.
@@ -90,7 +92,7 @@ On staging (or playground/dev), not on live:
 
 Do not commit `deploy/sync.env` (add it to the shop `.gitignore`; that file is owned by `shopware-cli project create`).
 
-Live should still have `SYNC_ENV=live` and `SHOPWARE_DEPLOY_ENV=live` in its own env files if they exist, so a mistaken `restore`/`sync` on live is refused. Snapshot on live is allowed (backups).
+Live should still have `SYNC_ENV=live` and `SHOPWARE_DEPLOY_ENV=live` in its own env files if they exist, so a mistaken `restore`/`sync` on live is refused. Snapshot on live is allowed (used by `deploy/backup-runtime.sh`). Live disaster restore is `BACKUP_ALLOW_LIVE_RESTORE=1` on the backup script, not a normal sync.
 
 ## Commands
 

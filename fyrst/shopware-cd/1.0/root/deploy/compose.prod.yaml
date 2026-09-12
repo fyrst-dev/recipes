@@ -12,9 +12,22 @@ services:
         env_file:
             -   ../.env
             -   ../.env.prod
-        ports:
-            # TODO: publish 8000 only on localhost and terminate TLS on a reverse proxy.
-            -   "${HTTP_PORT:-8000}:8000"
+        ports: !override
+            # Replaces compose.yaml's 0.0.0.0 mapping (Compose appends ports
+            # lists unless !override). Loopback only; host Caddy terminates TLS.
+            # Unsupported live override: HTTP_BIND=0.0.0.0
+            -   "${HTTP_BIND:-127.0.0.1}:${HTTP_PORT:-8000}:8000"
+        healthcheck:
+            # Same probe as compose.yaml; longer grace for cold VPS + setup helper.
+            test:
+                [
+                    "CMD-SHELL",
+                    "curl -fsS --max-time 4 http://127.0.0.1:8000/api/_info/health-check >/dev/null || php -r 'exit(@file_get_contents(\"http://127.0.0.1:8000/api/_info/health-check\")===false?1:0);'",
+                ]
+            interval: 10s
+            timeout: 5s
+            retries: 18
+            start_period: 120s
         deploy:
             resources:
                 limits:
@@ -34,7 +47,7 @@ services:
         env_file:
             -   ../.env
             -   ../.env.prod
-        # Do not publish 3306 on a public interface.
+        # MySQL stays unpublished (no 0.0.0.0:3306). Do not add a host port.
         ports: []
         deploy:
             resources:
