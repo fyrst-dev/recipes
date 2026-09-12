@@ -177,11 +177,13 @@ Copy `deploy/backup.env.example` → `deploy/backup.env`. `BACKUP_TARGET` = seco
 
 `deploy/managed/` is **planned / not implemented**. CI has no managed deploy job. Compose/VPS is the only supported last mile. See **[managed/README.md](managed/README.md)**.
 
-## Required CI secrets (Compose path)
+## CI secrets (Compose path)
 
 See comments at the top of `.github/workflows/cd.yaml` and `.gitlab-ci.yaml`.
 
-Typical: `SSH_PRIVATE_KEY`, `VPS_HOST`, `VPS_USER`, `VPS_PATH`, `SSH_KNOWN_HOSTS`.
+Typical for deploy: `SSH_PRIVATE_KEY`, `VPS_HOST`, `VPS_USER`, `VPS_PATH`, `SSH_KNOWN_HOSTS`.
+
+`SHOPWARE_PACKAGES_TOKEN` is optional — set it only if the shop uses packages.shopware.com. Empty is fine.
 
 ## Runtime data sync
 
