@@ -51,4 +51,4 @@ The former `deploy_managed` stub jobs in `.github/workflows/cd.yaml` and `.gitla
 - `.shopware-project.yaml` (owned by `shopware-cli project create` / the CLI, not this recipe)
 - Image naming and tags
 - Setup command (deployment helper + skip flags)
-- Build-time secrets (`SHOPWARE_PACKAGES_TOKEN`, Composer auth)
+- Optional build-time secrets (`SHOPWARE_PACKAGES_TOKEN` only if the shop uses packages.shopware.com; Composer auth). Empty token is fine.

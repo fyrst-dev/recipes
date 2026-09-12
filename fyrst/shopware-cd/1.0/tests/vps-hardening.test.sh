@@ -411,6 +411,50 @@ else
 fi
 unset COMPOSE_PROFILES || true
 
+echo "==> SHOPWARE_PACKAGES_TOKEN is optional (not required for create/build/deploy)"
+CD_YAML="$ROOT/root/.github/workflows/cd.yaml"
+GL_YAML="$ROOT/root/.gitlab-ci.yaml"
+for f in "$CD_YAML" "$GL_YAML"; do
+  if grep -n 'SHOPWARE_PACKAGES_TOKEN' "$f" | grep -Eiq 'required'; then
+    fail "$(basename "$f") still lists SHOPWARE_PACKAGES_TOKEN as required"
+  else
+    pass "$(basename "$f") does not call SHOPWARE_PACKAGES_TOKEN required"
+  fi
+  if grep -q 'set only if the shop uses packages.shopware.com' "$f"; then
+    pass "$(basename "$f") says set only if the shop uses packages.shopware.com"
+  else
+    fail "$(basename "$f") missing optional packages.shopware.com wording"
+  fi
+done
+if grep -A5 'Required secrets' "$CD_YAML" | grep -q 'SHOPWARE_PACKAGES_TOKEN'; then
+  fail "cd.yaml still lists SHOPWARE_PACKAGES_TOKEN under Required secrets"
+else
+  pass "cd.yaml does not list packages token under Required secrets"
+fi
+if grep -Fq 'packages_token=${{ secrets.SHOPWARE_PACKAGES_TOKEN }}' "$CD_YAML"; then
+  pass "GitHub still passes packages_token BuildKit secret (empty is fine)"
+else
+  fail "GitHub dropped packages_token secret"
+fi
+if grep -q -- '--secret id=packages_token,env=SHOPWARE_PACKAGES_TOKEN' "$GL_YAML" \
+  && grep -q 'SHOPWARE_PACKAGES_TOKEN:-' "$GL_YAML"; then
+  pass "GitLab still passes packages_token (empty default)"
+else
+  fail "GitLab dropped empty-ok packages_token handling"
+fi
+if grep -qi 'SHOPWARE_PACKAGES_TOKEN is optional' "$DEPLOY/README.md" \
+  && grep -q 'packages.shopware.com' "$DEPLOY/README.md"; then
+  pass "deploy README marks SHOPWARE_PACKAGES_TOKEN optional"
+else
+  fail "deploy README missing optional SHOPWARE_PACKAGES_TOKEN wording"
+fi
+if grep -q 'SHOPWARE_PACKAGES_TOKEN is a CI secret' "$ROOT/root/.env.example" \
+  && grep -q 'packages.shopware.com' "$ROOT/root/.env.example"; then
+  pass ".env.example documents packages token as optional CI secret"
+else
+  fail ".env.example missing optional SHOPWARE_PACKAGES_TOKEN wording"
+fi
+
 echo "==> managed host planned, no failing stub (#19)"
 if grep -q 'deploy_managed:' "$ROOT/root/.github/workflows/cd.yaml" \
   || grep -q 'deploy_managed:' "$ROOT/root/.gitlab-ci.yaml"; then
