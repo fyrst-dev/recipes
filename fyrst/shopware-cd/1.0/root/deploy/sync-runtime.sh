@@ -2,10 +2,13 @@
 # Snapshot / restore / sync Shopware runtime data between VPS environments.
 #
 # Unidirectional pull: run this on the CONSUMER (staging, playground, dev) with
-# `--from <source>`. Database + bind-mounted upload trees under
-# SHOPWARE_DATA_ROOT stay on the hosts (SQL dump + rsync). Default root:
+# `--from <source>`. Database + bind-mounted upload trees stay on the hosts
+# (SQL dump + rsync). Source of truth is SHOPWARE_SHOP_ID + SHOPWARE_DEPLOY_ENV
+# (same as deploy/compose.yaml). Default root:
 #   $SHOPWARE_DATA_BASE/$SHOPWARE_SHOP_ID/$SHOPWARE_DEPLOY_ENV
 #   e.g. /var/lib/shopware/data/acme/live
+# COMPOSE_PROJECT_NAME / SHOPWARE_DATA_ROOT are optional; this script derives
+# them when unset and prefers them when set. Compose does not require them.
 # Object storage (S3 and similar) is out of scope for this VPS path.
 #
 # Does not call deploy/vps-release.sh and does not change release behaviour.
@@ -88,8 +91,10 @@ Environment (no secrets in this script; see deploy/sync.env.example):
   SHOPWARE_SHOP_ID       Stable shop slug (required on VPS)
   SHOPWARE_DEPLOY_ENV    This host's stack role (live|staging|playground|dev)
   SHOPWARE_DATA_BASE     Prefix helper (default /var/lib/shopware/data)
-  SHOPWARE_DATA_ROOT     Bind-mount root. Unset →
+  SHOPWARE_DATA_ROOT     Optional bind-mount root for this script. Unset →
                          $SHOPWARE_DATA_BASE/$SHOPWARE_SHOP_ID/$SHOPWARE_DEPLOY_ENV
+                         (Compose interpolates that formula itself; it does
+                         not require this variable)
   SYNC_DATA_ROOT         Override for this host (else SHOPWARE_DATA_ROOT / derived)
   SYNC_REMOTE_DATA_ROOT  Bind-mount root on the SSH source. Unset →
                          $SHOPWARE_DATA_BASE/$SHOPWARE_SHOP_ID/$SYNC_SOURCE_ENV
@@ -104,8 +109,10 @@ Environment (no secrets in this script; see deploy/sync.env.example):
   SYNC_POST_RESTORE_CMD  Optional shell command after restore (non-fatal)
   SYNC_ARCHIVE_IMAGE     Image used to tar trees if rsync cannot (default alpine:3.20)
   COMPOSE_DIR            Shop root (default: parent of deploy/)
-  COMPOSE_PROJECT_NAME   Unique on this Docker host. Unset →
+  COMPOSE_PROJECT_NAME   Optional for this script. Unset →
                          ${SHOPWARE_SHOP_ID}-${SHOPWARE_DEPLOY_ENV}
+                         (Compose interpolates that in name:; it does not
+                         require this variable)
 
 Per-alias overrides (example --from live): SYNC_LIVE_SSH_HOST, SYNC_LIVE_SSH_USER,
 SYNC_LIVE_SSH_PORT, SYNC_LIVE_SSH_KEY, SYNC_LIVE_REMOTE_PATH, SYNC_LIVE_DATA_ROOT.
@@ -115,7 +122,7 @@ Cron (run on staging, pull from live):
   15 2 * * * cd /opt/shopware/acme-staging && bash deploy/sync-runtime.sh sync --from live --data all
 
 Compose files (same as deploy/vps-release.sh, from shop root):
-  docker compose -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/compose.vps.yaml
+  docker compose --env-file .env -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/compose.vps.yaml
 EOF
 }
 
@@ -478,12 +485,13 @@ done
 
 COMPOSE=(
   docker compose
+  --env-file .env
   -f deploy/compose.yaml
   -f deploy/compose.prod.yaml
   -f deploy/compose.vps.yaml
 )
 
-COMPOSE_STR="docker compose -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/compose.vps.yaml"
+COMPOSE_STR="docker compose --env-file .env -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/compose.vps.yaml"
 
 derive_compose_project_name
 
@@ -1003,7 +1011,7 @@ archive_volume_local() {
     return
   fi
   if ! docker volume inspect "$vol" >/dev/null 2>&1; then
-    die "Named volume '${vol}' not found and bind-mount $(bind_item_dir "$DATA_ROOT" "$logical") is missing. mkdir -p \$SHOPWARE_DATA_ROOT/{files,media,thumbnail,theme,sitemap} && chown 82:82 (see deploy/README.md)."
+    die "Named volume '${vol}' not found and bind-mount $(bind_item_dir "$DATA_ROOT" "$logical") is missing. mkdir -p ${DATA_ROOT}/{files,media,thumbnail,theme,sitemap} && chown 82:82 (see deploy/README.md)."
   fi
   docker run --rm \
     -v "${vol}:/from:ro" \

@@ -8,23 +8,21 @@ This is **not** part of image CD. `deploy/vps-release.sh` is unchanged (pull ima
 
 Object storage (S3 and similar) is **out of scope** for this VPS path. Transfer is SSH + `mysqldump`/`mariadb-dump` + **rsync of bind-mount directories** under `SHOPWARE_DATA_ROOT`. Named-volume docker-tar is only a fallback if those directories are missing.
 
-After recipe updates: `composer recipes:update fyrst/shopware-cd`, then merge new `.env.example` keys (`SHOPWARE_SHOP_ID`, `SHOPWARE_DEPLOY_ENV`, `COMPOSE_PROJECT_NAME`, `SHOPWARE_DATA_ROOT`) into each environment's `.env`.
+After recipe updates: `composer recipes:update fyrst/shopware-cd`, then merge new `.env.example` keys (`SHOPWARE_SHOP_ID`, `SHOPWARE_DEPLOY_ENV`, optional `SHOPWARE_DATA_BASE`) into each environment's `.env`. `COMPOSE_PROJECT_NAME` / `SHOPWARE_DATA_ROOT` are optional script overrides — Compose does not require them.
 
 ## Bind mounts (per shop + env)
 
-`deploy/compose.yaml` bind-mounts host dirs into the container (not named volumes). Project name is `COMPOSE_PROJECT_NAME` from `.env` (no hardcoded `name: shopware`).
-
-Formula (set **concrete** values in `.env` — Compose does not nest `${A}/${B}` in all versions):
+`deploy/compose.yaml` bind-mounts host dirs into the container (not named volumes). Source of truth is `SHOPWARE_SHOP_ID` + `SHOPWARE_DEPLOY_ENV` (no hardcoded `name: shopware`). Compose concatenates three interpolations (nested `${A:-.../${B}}` defaults do not expand):
 
 ```text
-COMPOSE_PROJECT_NAME=${SHOPWARE_SHOP_ID}-${SHOPWARE_DEPLOY_ENV}     # e.g. acme-live
-SHOPWARE_DATA_ROOT=/var/lib/shopware/data/${SHOPWARE_SHOP_ID}/${SHOPWARE_DEPLOY_ENV}
-# e.g. /var/lib/shopware/data/acme/live
+# Compose name:  ${SHOPWARE_SHOP_ID}-${SHOPWARE_DEPLOY_ENV}     → acme-live
+# Bind-mount:    ${SHOPWARE_DATA_BASE:-/var/lib/shopware/data}/${SHOPWARE_SHOP_ID}/${SHOPWARE_DEPLOY_ENV}
+#                → /var/lib/shopware/data/acme/live
 ```
 
-Optional `SHOPWARE_DATA_BASE=/var/lib/shopware/data` is a prefix helper for scripts only.
+Optional `SHOPWARE_DATA_BASE=/var/lib/shopware/data`. Optional `COMPOSE_PROJECT_NAME` / `SHOPWARE_DATA_ROOT` only if a script/tool needs the expanded strings — scripts derive them when unset and prefer them when set. Compose does not fail when those two are absent.
 
-| Host (`$SHOPWARE_DATA_ROOT/…`) | Container |
+| Host (derived data root `/…`) | Container |
 | --- | --- |
 | `.../files` | `/var/www/html/files` |
 | `.../media` | `/var/www/html/public/media` |
@@ -32,7 +30,7 @@ Optional `SHOPWARE_DATA_BASE=/var/lib/shopware/data` is a prefix helper for scri
 | `.../theme` | `/var/www/html/public/theme` |
 | `.../sitemap` | `/var/www/html/public/sitemap` |
 
-`mysql_data` and `redis_data` stay named volumes, scoped by `COMPOSE_PROJECT_NAME` (e.g. `acme-live_mysql_data`). Copy SQL with `--data db`, not the `mysql_data` volume.
+`mysql_data` and `redis_data` stay named volumes, auto-prefixed by the Compose project name (e.g. `acme-live_mysql_data`). Copy SQL with `--data db`, not the `mysql_data` volume.
 
 Live and staging of the same shop on one VPS:
 
@@ -41,19 +39,20 @@ Live and staging of the same shop on one VPS:
 /var/lib/shopware/data/acme/staging/media
 ```
 
-A second shop uses a different `SHOPWARE_SHOP_ID` (`widgets-live`, …). `COMPOSE_PROJECT_NAME` must be unique on the Docker host.
+A second shop uses a different `SHOPWARE_SHOP_ID` (`widgets` → `widgets-live`, …). Project names stay unique on the Docker host because they include shop id + env.
 
 ### One-time bootstrap (each VPS, each shop+env)
 
 ```bash
-# after setting SHOPWARE_DATA_ROOT in .env
-mkdir -p "${SHOPWARE_DATA_ROOT}"/{files,media,thumbnail,theme,sitemap}
-chown -R 82:82 "${SHOPWARE_DATA_ROOT}"
+# after setting SHOPWARE_SHOP_ID + SHOPWARE_DEPLOY_ENV in .env
+DATA="${SHOPWARE_DATA_BASE:-/var/lib/shopware/data}/${SHOPWARE_SHOP_ID}/${SHOPWARE_DEPLOY_ENV}"
+mkdir -p "${DATA}"/{files,media,thumbnail,theme,sitemap}
+chown -R 82:82 "${DATA}"
 ```
 
 (`82` is www-data in `shopware/docker-base`. `deploy/compose.yaml` `init-perm` chowns the same mount points on setup.)
 
-When `SHOPWARE_DATA_ROOT` / `SYNC_DATA_ROOT` are unset, `deploy/sync-runtime.sh` derives `$SHOPWARE_DATA_BASE/$SHOPWARE_SHOP_ID/$SHOPWARE_DEPLOY_ENV`. `--from live` uses `$BASE/$SHOPWARE_SHOP_ID/${SYNC_SOURCE_ENV:-live}` unless `SYNC_REMOTE_DATA_ROOT` is set. Missing `SHOPWARE_SHOP_ID` is refused.
+When `SHOPWARE_DATA_ROOT` / `SYNC_DATA_ROOT` are unset, `deploy/sync-runtime.sh` derives `$SHOPWARE_DATA_BASE/$SHOPWARE_SHOP_ID/$SHOPWARE_DEPLOY_ENV` (same path Compose mounts). `--from live` uses `$BASE/$SHOPWARE_SHOP_ID/${SYNC_SOURCE_ENV:-live}` unless `SYNC_REMOTE_DATA_ROOT` is set. Missing `SHOPWARE_SHOP_ID` is refused.
 
 ## What is copied
 
@@ -82,7 +81,7 @@ The SSH user must be able to run `docker` (typically the `docker` group). Direct
 
 On staging (or playground/dev), not on live:
 
-1. Create `SHOPWARE_DATA_ROOT` as above. Set `SHOPWARE_SHOP_ID`, `SHOPWARE_DEPLOY_ENV`, `COMPOSE_PROJECT_NAME`, and `SHOPWARE_DATA_ROOT` in `.env`.
+1. Create the bind-mount dirs as above. Set `SHOPWARE_SHOP_ID` and `SHOPWARE_DEPLOY_ENV` in `.env` (optional `SHOPWARE_DATA_BASE`). Compose does not need `COMPOSE_PROJECT_NAME` / `SHOPWARE_DATA_ROOT`.
 2. Copy `deploy/sync.env.example` → `deploy/sync.env` and `chmod 600 deploy/sync.env`.
 3. Set `SYNC_ENV=staging` (or `playground` / `dev`). **Never** set `SYNC_ENV=live` or `SHOPWARE_DEPLOY_ENV=live` on a host you restore onto.
 4. Fill `SYNC_SSH_*` and `SYNC_REMOTE_PATH` for the source (live checkout, e.g. `/opt/shopware/acme-live`). `SYNC_DATA_ROOT` / `SYNC_REMOTE_DATA_ROOT` only if they differ from the derived `$BASE/$SHOPWARE_SHOP_ID/<env>` paths. Optional: `SYNC_SOURCE_ENV=live`.
