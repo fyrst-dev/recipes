@@ -442,7 +442,7 @@ if grep -q -- '--secret id=packages_token,env=SHOPWARE_PACKAGES_TOKEN' "$GL_YAML
 else
   fail "GitLab dropped empty-ok packages_token handling"
 fi
-if grep -qi 'SHOPWARE_PACKAGES_TOKEN is optional' "$DEPLOY/README.md" \
+if grep -Eiq 'SHOPWARE_PACKAGES_TOKEN.? is optional' "$DEPLOY/README.md" \
   && grep -q 'packages.shopware.com' "$DEPLOY/README.md"; then
   pass "deploy README marks SHOPWARE_PACKAGES_TOKEN optional"
 else
