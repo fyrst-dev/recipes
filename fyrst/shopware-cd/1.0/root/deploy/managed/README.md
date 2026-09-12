@@ -48,7 +48,7 @@ The former `deploy_managed` stub jobs in `.github/workflows/cd.yaml` and `.gitla
 ## Keep identical across hosts (future)
 
 - `docker/Dockerfile` (from `shopware/docker`) / `PHP_VERSION=8.3`
-- `.shopware-project.yaml` (owned by `shopware-cli project create` / the CLI, not this recipe)
+- `.shopware-project.yml` (create’s default; `.yaml` also accepted — owned by `shopware-cli project create` / the CLI, not this recipe)
 - Image naming and tags
 - Setup command (deployment helper + skip flags)
 - Optional build-time secrets (`SHOPWARE_PACKAGES_TOKEN` only if the shop uses packages.shopware.com; Composer auth). Empty token is fine.

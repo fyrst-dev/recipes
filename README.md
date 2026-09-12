@@ -55,7 +55,7 @@ composer require shopware/docker shopware/deployment-helper fyrst/shopware-cd
 
 `shopware/docker` is required in that same command: it copies `docker/Dockerfile`, which CI and CD Compose default to. This recipe does not ship a root Dockerfile. A missing `docker/Dockerfile` means `shopware/docker` was skipped.
 
-`shopware-cli project create` owns `compose.yaml`, `.gitignore`, and `.shopware-project.yaml`. This recipe does **not** copy them.
+`shopware-cli project create` owns `compose.yaml`, `.gitignore`, and `.shopware-project.yml` (create’s default; `.yaml` is also accepted — do not rename). This recipe does **not** copy them.
 
 - **Local:** `shopware-cli project dev` and the CLI-managed shop-root `compose.yaml`. Live → laptop uploads: `deploy/sync-runtime-local.sh`.
 - **VPS/CD:** files under `deploy/` (`deploy/compose.yaml`, `deploy/compose.prod.yaml`, `deploy/compose.vps.yaml`, `deploy/vps-release.sh`, `deploy/vps-rollback.sh`, `deploy/backup-runtime.sh`, `deploy/sync-runtime.sh`, `deploy/edge/`).
@@ -87,7 +87,7 @@ composer recipes:update fyrst/shopware-cd
 
 | Path | Role |
 |---|---|
-| `fyrst/shopware-cd/1.0/` | Current Flex recipe for Packagist package `fyrst/shopware-cd` (overlays live only here; Packagist package repo is https://github.com/fyrst-dev/shopware-cd). Ships CI, `deploy/` (CD Compose), `.dockerignore`, `.env.example`. Does not copy `compose.yaml`, `.gitignore`, or `.shopware-project.yaml` (`shopware-cli project create` / CLI). |
+| `fyrst/shopware-cd/1.0/` | Current Flex recipe for Packagist package `fyrst/shopware-cd` (overlays live only here; Packagist package repo is https://github.com/fyrst-dev/shopware-cd). Ships CI, `deploy/` (CD Compose), `.dockerignore`, `.env.example`. Does not copy `compose.yaml`, `.gitignore`, or `.shopware-project.yml` / `.yaml` (`shopware-cli project create` / CLI). |
 | `.github/workflows/flex-update.yml` | Compiles recipes → `flex/main` |
 | `.github/workflows/flex-cleanup.yml` | Deletes Flex PR test refs |
 

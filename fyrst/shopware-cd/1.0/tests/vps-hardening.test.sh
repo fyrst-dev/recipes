@@ -226,10 +226,15 @@ if [[ "$rc" -eq 0 ]] && printf '%s' "$out" | grep -q 'tag-a' && printf '%s' "$ou
 else
   fail "rollback dry-run rc=$rc out=$out"
 fi
-if printf '%s' "$out" | grep -q -- '--no-build' && ! printf '%s' "$out" | grep -qE 'docker compose build|docker build '; then
-  pass "rollback dry-run is pull/--no-build only"
+if printf '%s' "$out" | grep -q -- '--pull never' && printf '%s' "$out" | grep -q -- '--no-build' && ! printf '%s' "$out" | grep -qE 'docker compose build|docker build '; then
+  pass "rollback dry-run is pull-never / up --no-build only"
 else
   fail "rollback dry-run must not rebuild images"
+fi
+if printf '%s' "$out" | grep -qE 'run --rm --no-build|[[:space:]]run --no-build'; then
+  fail "rollback dry-run still uses compose run --no-build"
+else
+  pass "rollback dry-run does not pass run --no-build"
 fi
 
 echo "==> smoke-failure prints exact command"
@@ -314,12 +319,30 @@ ok = len(ports) == 1 and ports[0].get("host_ip") == "127.0.0.1"
 mysql = d["services"]["mysql"].get("ports")
 hc = (d["services"]["web"].get("healthcheck") or {}).get("test") or []
 path_ok = any("api/_info/health-check" in str(x) for x in hc)
-raise SystemExit(0 if ok and mysql in (None, []) and path_ok else 1)
+web_pull = (d["services"]["web"].get("pull_policy") or "").lower()
+setup_pull = (d["services"]["setup"].get("pull_policy") or "").lower()
+raise SystemExit(0 if ok and mysql in (None, []) and path_ok and web_pull == "always" and setup_pull == "always" else 1)
 PY
   then
-    pass "merged compose: one 127.0.0.1:8000 mapping, mysql unpublished, health path set"
+    pass "merged compose: one 127.0.0.1:8000 mapping, mysql unpublished, health path set, pull_policy always"
   else
-    fail "merged compose ports/health not as required (rc=$rc)"
+    fail "merged compose ports/health/pull_policy not as required (rc=$rc)"
+  fi
+  set +e
+  (cd "$CFG" && PULL_POLICY=never docker compose --env-file .env -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/compose.vps.yaml config --format json >"$CFG/out-never.json")
+  rc=$?
+  set -e
+  if [[ "$rc" -eq 0 ]] && python3 - "$CFG/out-never.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+web_pull = (d["services"]["web"].get("pull_policy") or "").lower()
+setup_pull = (d["services"]["setup"].get("pull_policy") or "").lower()
+raise SystemExit(0 if web_pull == "never" and setup_pull == "never" else 1)
+PY
+  then
+    pass "PULL_POLICY=never interpolates pull_policy never on image services"
+  else
+    fail "PULL_POLICY=never did not change pull_policy (rc=$rc)"
   fi
 else
   echo "docker compose not available; skipped merge check"
@@ -411,7 +434,104 @@ else
 fi
 unset COMPOSE_PROFILES || true
 
-echo "==> SHOPWARE_PACKAGES_TOKEN is optional (not required for create/build/deploy)"
+echo "==> compose run must not pass --no-build (Compose v5.5.1 rejects it)"
+# Exact run-flag forms only, ignoring comments. Do not match `up --no-build`.
+if grep -RIn --include='*.sh' -- 'run --rm --no-build' "$DEPLOY" \
+  | grep -v ':[[:space:]]*#' \
+  || grep -RIn --include='*.sh' -- 'run --no-build' "$DEPLOY" \
+  | grep -v ':[[:space:]]*#'; then
+  fail "compose run still uses --no-build"
+else
+  pass "no compose run --no-build in deploy scripts"
+fi
+if grep -q -- 'run --rm --pull never' "$DEPLOY/lib/vps-common.sh" \
+  && grep -q -- 'run --rm --pull never' "$DEPLOY/sync-runtime.sh"; then
+  pass "vps-common + sync-runtime use run --pull never"
+else
+  fail "setup/sync run is not --pull never"
+fi
+if grep -q -- 'up -d --no-build' "$DEPLOY/lib/vps-common.sh"; then
+  pass "compose up still uses --no-build"
+else
+  fail "compose up lost --no-build"
+fi
+
+echo "==> SKIP_PULL / PULL_POLICY=never (same-host tag-and-load)"
+if grep -q 'pull_policy: ${PULL_POLICY:-always}' "$DEPLOY/compose.vps.yaml"; then
+  pass "compose.vps.yaml interpolates PULL_POLICY (default always)"
+else
+  fail "compose.vps.yaml missing PULL_POLICY interpolation"
+fi
+if grep -q 'PULL_POLICY=never' "$ROOT/root/.env.example" \
+  && grep -q 'SKIP_PULL=1' "$ROOT/root/.env.example" \
+  && grep -q 'PULL_POLICY=never' "$DEPLOY/README.md"; then
+  pass ".env.example + deploy README document PULL_POLICY=never / SKIP_PULL=1"
+else
+  fail "docs missing PULL_POLICY=never / SKIP_PULL=1"
+fi
+set +e
+out="$(cd "$SHOP" && SKIP_PULL=1 bash deploy/vps-release.sh --dry-run 2>&1)"
+rc=$?
+set -e
+if [[ "$rc" -eq 0 ]] && printf '%s' "$out" | grep -q 'DRY-RUN skip compose pull' \
+  && printf '%s' "$out" | grep -q -- '--pull never' \
+  && ! printf '%s' "$out" | grep -qE 'DRY-RUN .* pull$'; then
+  pass "SKIP_PULL=1 dry-run skips compose pull and uses --pull never"
+else
+  fail "SKIP_PULL dry-run rc=$rc out=$out"
+fi
+set +e
+out="$(cd "$SHOP" && bash deploy/vps-release.sh --skip-pull --dry-run 2>&1)"
+rc=$?
+set -e
+if [[ "$rc" -eq 0 ]] && printf '%s' "$out" | grep -q 'DRY-RUN skip compose pull'; then
+  pass "--skip-pull dry-run skips compose pull"
+else
+  fail "--skip-pull dry-run rc=$rc out=$out"
+fi
+
+echo "==> COMPOSE_PROJECT_NAME create footgun"
+if grep -q 'COMPOSE_PROJECT_NAME=sw-shop' "$ROOT/root/.env.example" \
+  && grep -q 'COMPOSE_PROJECT_NAME=sw-shop' "$ROOT/post-install.txt" \
+  && grep -q 'COMPOSE_PROJECT_NAME=sw-shop' "$DEPLOY/README.md"; then
+  pass "docs warn about create's COMPOSE_PROJECT_NAME=sw-shop-… line"
+else
+  fail "docs missing create COMPOSE_PROJECT_NAME=sw-shop-… warning"
+fi
+if grep -q 'does not delete it' "$ROOT/post-install.txt" \
+  && grep -q 'does not delete it' "$DEPLOY/README.md"; then
+  pass "docs say the recipe does not delete create's COMPOSE_PROJECT_NAME"
+else
+  fail "docs missing do-not-auto-delete wording"
+fi
+printf 'COMPOSE_PROJECT_NAME=sw-shop-acme\n' >>"$SHOP/.env"
+set +e
+out="$(cd "$SHOP" && bash deploy/vps-release.sh --dry-run 2>&1)"
+rc=$?
+set -e
+if [[ "$rc" -eq 0 ]] && printf '%s' "$out" | grep -q 'overrides Compose name:' \
+  && printf '%s' "$out" | grep -q 'sw-shop-acme'; then
+  pass "vps-release warns when create's COMPOSE_PROJECT_NAME is set"
+else
+  fail "COMPOSE_PROJECT_NAME warning rc=$rc out=$out"
+fi
+# restore fixture .env (drop the sw-shop line)
+sed -i '/^COMPOSE_PROJECT_NAME=sw-shop-acme$/d' "$SHOP/.env"
+
+echo "==> create writes .shopware-project.yml (do not rename)"
+if grep -q '.shopware-project.yml' "$ROOT/post-install.txt" \
+  && grep -q 'do not rename' "$ROOT/post-install.txt" \
+  && ! grep -q 'loads <comment>.shopware-project.yaml</comment> from create' "$ROOT/post-install.txt"; then
+  pass "post-install says create writes .yml and both extensions are fine"
+else
+  fail "post-install still claims create always uses .yaml"
+fi
+if grep -q '.shopware-project.yml' "$ROOT/README.md" \
+  && grep -q 'do not rename' "$ROOT/README.md"; then
+  pass "recipe README documents create's .yml"
+else
+  fail "recipe README missing create .yml wording"
+fi
 CD_YAML="$ROOT/root/.github/workflows/cd.yaml"
 GL_YAML="$ROOT/root/.gitlab-ci.yaml"
 for f in "$CD_YAML" "$GL_YAML"; do
