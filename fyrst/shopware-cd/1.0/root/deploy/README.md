@@ -23,10 +23,7 @@
 - **web** — Shopware image (`ghcr.io/shopware/docker-base` + project artifact), port 8000 (prod: loopback only)
 - **setup** — one-shot `shopware-deployment-helper` (profile `setup`)
 - **mysql** — bundled in Compose, or delete the service and point `DATABASE_URL` at DBaaS. Prod overlay keeps `ports: []`.
-- **redis** / **worker** / **scheduler** — optional Compose profiles
-- **setup** — one-shot `shopware-deployment-helper` (profile `setup`)
-- **mysql** — bundled in Compose, or delete the service and point `DATABASE_URL` at DBaaS
-- **redis** / **worker** / **scheduler** — optional Compose profiles
+- **redis** / **worker** / **scheduler** — Compose profiles. **Live recommendation:** `COMPOSE_PROFILES=redis,worker,scheduler` (uncomment in `.env`). Staging leaves this unset unless you intentionally need async/scheduled tasks. `deploy/vps-release.sh` warns on live when the variable is empty; it does **not** auto-enable profiles.
 
 ## One-time VPS bootstrap
 
@@ -66,6 +63,7 @@
 8. Put **host Caddy** in front of loopback `HTTP_PORT` (TLS). See **[edge/README.md](edge/README.md)** and `deploy/edge/Caddyfile`. Do not expose MySQL (`compose.prod.yaml` keeps `ports: []`).
 9. Store the previous image tag for rollback (the release script writes `.deployed-tag` / `.previous-tag`). Use `deploy/vps-rollback.sh` — do not re-run a failed tag via CI unless you mean to.
 10. Copy `deploy/backup.env.example` → `deploy/backup.env` on **live** and enable nightly `deploy/backup-runtime.sh`. Sync is not a backup.
+11. On **live**, uncomment `COMPOSE_PROFILES=redis,worker,scheduler` in `.env` (worker + scheduler; include redis if you use it). Staging should not inherit that unless documented.
 
 ## Several shops / live+staging on the same VPS
 
@@ -175,6 +173,10 @@ See **[backup-runtime.md](backup-runtime.md)**. Cron on live:
 
 Copy `deploy/backup.env.example` → `deploy/backup.env`. `BACKUP_TARGET` = second disk or SSH. `BACKUP_KEEP_DAYS` (default 14) is implemented. Quarterly restore drill: restore onto staging first; live DR needs `BACKUP_ALLOW_LIVE_RESTORE=1`.
 
+## Managed host (planned)
+
+`deploy/managed/` is **planned / not implemented**. CI has no managed deploy job. Compose/VPS is the only supported last mile. See **[managed/README.md](managed/README.md)**.
+
 ## Required CI secrets (Compose path)
 
 See comments at the top of `.github/workflows/cd.yaml` and `.gitlab-ci.yaml`.
@@ -206,6 +208,8 @@ bash deploy/sync-runtime.sh sync --from live --data all --dry-run
 ```
 
 Restore/sync refuse `SYNC_ENV=live` and `SHOPWARE_DEPLOY_ENV=live` (and a checkout directory named `live`).
+
+Opt-in sales-channel domain rewrite after a DB restore: set `SYNC_REWRITE_APP_URL=https://staging.example.com` (or `SYNC_REWRITE_URL_MAP`) on the consumer. Default is off. Rewrite is **impossible on live**. Payment/shipping webhooks still need a manual review. See **[sync-runtime.md](sync-runtime.md)**.
 
 ## Local project dev pull (live → laptop)
 

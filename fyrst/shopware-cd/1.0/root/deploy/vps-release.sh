@@ -10,6 +10,8 @@
 # Optional:
 #   COMPOSE_DIR            shop checkout (default: repository root next to deploy/)
 #   COMPOSE_PROFILES       comma-separated: redis,worker,scheduler  (never include "setup")
+#                          Live recommendation: redis,worker,scheduler (uncomment in .env).
+#                          Empty on live → loud warning; this script does not auto-enable.
 #   SMOKE_URL              HTTP URL to probe after up (e.g. http://127.0.0.1:8000)
 #   SHOPWARE_DATA_BASE     prefix helper (default /var/lib/shopware/data)
 #   COMPOSE_PROJECT_NAME   scripts/docs only; unset → ${SHOPWARE_SHOP_ID}-${SHOPWARE_DEPLOY_ENV}
@@ -68,6 +70,7 @@ done
 
 vps_bootstrap
 vps_require_image_tag
+vps_warn_empty_live_profiles
 
 if [[ -f .deployed-tag ]]; then
   cp .deployed-tag .previous-tag

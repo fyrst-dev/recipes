@@ -35,9 +35,11 @@
 #   VPS_SSH_PORT              optional, default 22 (repository variable)
 #
 # Optional:
-#   DEPLOY_TARGET             repository variable: "managed" skips SSH Compose
-#                             (see deploy/managed/README.md)
 #   SMOKE_URL                 public URL CI can GET after deploy
+#
+# Managed host deploy is planned / not implemented (recipes #19).
+# DEPLOY_TARGET=managed is not a supported switch. There is no deploy_managed
+# job. See deploy/managed/README.md.
 #
 # Never put real tokens, keys, or hostnames in this file.
 
@@ -189,8 +191,7 @@ jobs:
         if: >
             needs.preflight.outputs.is_shop == 'true' &&
             github.event_name != 'pull_request' &&
-            (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) &&
-            vars.DEPLOY_TARGET != 'managed'
+            (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
         runs-on: ubuntu-latest
         timeout-minutes: 30
         # TODO: rename or remove if the shop does not use GitHub Environments
@@ -247,27 +248,4 @@ jobs:
                         sleep 3
                     done
                     echo "Smoke check failed for ${SMOKE_URL}" >&2
-                    exit 1
-
-    deploy_managed:
-        name: Deploy (managed host)
-        needs: [preflight, push]
-        if: >
-            needs.preflight.outputs.is_shop == 'true' &&
-            github.event_name != 'pull_request' &&
-            (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) &&
-            vars.DEPLOY_TARGET == 'managed'
-        runs-on: ubuntu-latest
-        timeout-minutes: 15
-        environment: production
-        steps:
-            -   name: Managed deploy stub
-                env:
-                    IMAGE_TAG: ${{ github.event.inputs.image_tag || github.sha }}
-                run: |
-                    echo "DEPLOY_TARGET=managed — same image, different last mile."
-                    echo "Image: ${IMAGE}:${IMAGE_TAG}"
-                    echo "Replace this job with the host CLI/API. See deploy/managed/README.md."
-                    echo "Setup command stays:"
-                    echo "  vendor/bin/shopware-deployment-helper run --skip-theme-compile --skip-assets-install"
                     exit 1
