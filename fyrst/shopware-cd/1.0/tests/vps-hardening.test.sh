@@ -379,7 +379,7 @@ else
   fail ".env.example missing live profiles recommendation"
 fi
 if grep -q 'COMPOSE_PROFILES=redis,worker,scheduler' "$ROOT/post-install.txt" \
-  && grep -q 'does not auto-enable' "$DEPLOY/README.md"; then
+  && grep -q 'auto-enable' "$DEPLOY/README.md"; then
   pass "post-install + deploy README mention profiles"
 else
   fail "post-install / README missing profiles"

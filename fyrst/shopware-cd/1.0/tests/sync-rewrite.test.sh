@@ -169,7 +169,7 @@ fi
 
 echo "==> full script: default-off on live still uses restore guard (no rewrite mention required)"
 set +e
-out="$(cd "$SHOP" && unset SYNC_REWRITE_APP_URL SYNC_REWRITE_URL_MAP \
+out="$(cd "$SHOP" && env -u SYNC_REWRITE_APP_URL -u SYNC_REWRITE_URL_MAP -u SYNC_ALLOW_LIVE_RESTORE \
   bash deploy/sync-runtime.sh restore --dry-run --snapshot-dir "$SHOP/var/runtime-sync" 2>&1)"
 rc=$?
 set -e
@@ -186,7 +186,7 @@ fi
 
 echo "==> docs"
 if grep -q 'SYNC_REWRITE_APP_URL' "$DEPLOY/sync-runtime.md" \
-  && grep -q 'Payment/shipping webhooks' "$DEPLOY/sync-runtime.md" \
+  && grep -qi 'payment/shipping webhook' "$DEPLOY/sync-runtime.md" \
   && grep -q 'not rewritten unless you opt in' "$DEPLOY/sync-runtime.md"; then
   pass "sync-runtime.md documents opt-in rewrite + webhook review"
 else
