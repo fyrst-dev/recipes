@@ -15,6 +15,13 @@
 # COMPOSE_PROJECT_NAME / SHOPWARE_DATA_ROOT are optional script/docs overrides
 # (scripts derive them when unset; if set, scripts prefer them). Compose does
 # not fail when those two are absent — do not set them empty.
+#
+# WARNING: `shopware-cli project create` writes `COMPOSE_PROJECT_NAME=sw-shop-…`
+# into shop-root `.env` for local `project dev`. That env var **overrides**
+# Compose `name:` (`${SHOPWARE_SHOP_ID}-${SHOPWARE_DEPLOY_ENV}`). On the VPS,
+# **remove or comment out** that line. This recipe does not delete it (create
+# owns the local flow). `deploy/vps-release.sh` warns when the value does not
+# match shop id + deploy env.
 # After recipe changes: `composer recipes:update fyrst/shopware-cd` then merge
 # new keys from `.env.example` into each shop's `.env`.
 
@@ -44,6 +51,11 @@
    require `COMPOSE_PROJECT_NAME` or `SHOPWARE_DATA_ROOT`. `deploy/vps-release.sh`
    and the sync scripts still derive those expanded strings when unset (and
    prefer them when set) for logs and tools.
+
+   **Do not copy create’s `COMPOSE_PROJECT_NAME=sw-shop-…` onto the VPS.**
+   That line overrides Compose `name:`. Remove or comment it out in the VPS
+   `.env`. Local `shopware-cli project dev` can keep it; this recipe does not
+   delete it (create owns the local flow).
 4. Create `.env.prod` (may be empty) so `deploy/compose.prod.yaml` can mount it.
 5. Set `IMAGE` to the registry repository CI pushes (example: `ghcr.io/fyrst-dev/shop-name`).
 6. Create the runtime upload bind mounts (uid 82 = www-data in docker-base):
@@ -84,7 +96,7 @@ Named volumes become `acme-live_mysql_data`, `acme-staging_mysql_data`, … — 
 `deploy/vps-release.sh` (from the checkout at `VPS_PATH`):
 
 1. Record the currently deployed tag as `.previous-tag`
-2. `docker compose … pull` the new `:git-sha`
+2. `docker compose … pull` the new `:git-sha` (skip with `SKIP_PULL=1` / `PULL_POLICY=never` / `--skip-pull`)
 3. Start bundled `mysql` (if present) and optional profiles
 4. Run setup **once**:
 
@@ -94,7 +106,7 @@ Named volumes become `acme-live_mysql_data`, `acme-staging_mysql_data`, … — 
      --skip-assets-install
    ```
 
-   (via `docker compose --env-file .env -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/compose.vps.yaml --profile setup run --rm --no-build setup`)
+   (via `docker compose --env-file .env -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/compose.vps.yaml --profile setup run --rm --pull never setup`)
 5. Recreate `web` with `--no-build`
 6. Optional `SMOKE_URL` check. **Writes `.deployed-tag` only after success.**
 7. On smoke failure: always prints
@@ -122,9 +134,10 @@ docker compose --env-file .env -f deploy/compose.yaml -f deploy/compose.prod.yam
 
 - `deploy/compose.yaml` — CD/VPS image-based stack
 - `deploy/compose.prod.yaml` — production overrides
+- `deploy/compose.vps.yaml` — `pull_policy: ${PULL_POLICY:-always}` (CI/VPS default). Same-host tag-and-load / air-gap: `PULL_POLICY=never` and `SKIP_PULL=1` (or `bash deploy/vps-release.sh --skip-pull`) so Compose does not pull a tag that was never pushed.
 `deploy/vps-release.sh` sources shop-root `.env` (shop id + env required), derives `COMPOSE_PROJECT_NAME` / `SHOPWARE_DATA_ROOT` when unset for logs/tools, then runs that command from `COMPOSE_DIR` (shop root). Compose itself does not need those two expanded vars.
 
-Local development uses `shopware-cli project create`'s shop-root `compose.yaml` with `shopware-cli project dev`. This recipe does not copy that file.
+Local development uses `shopware-cli project create`'s shop-root `compose.yaml` with `shopware-cli project dev`. This recipe does not copy that file. Create writes `.shopware-project.yml` (fine as-is; shopware-cli also accepts `.yaml` — do not rename).
 
 ## Why skip theme/assets on deploy
 
@@ -139,7 +152,7 @@ The helper detects a fresh database vs an existing shop:
 
 ## Rollback
 
-`deploy/vps-rollback.sh` reads `.previous-tag` (refuses if missing/empty), keeps `IMAGE` from env/`.env`, and runs the **same** compose stack and order as release: pull → mysql/redis → setup profile → recreate `web` → extra profiles. Pull + `--no-build` only. Optional `SMOKE_URL`. Writes `.deployed-tag` only after success.
+`deploy/vps-rollback.sh` reads `.previous-tag` (refuses if missing/empty), keeps `IMAGE` from env/`.env`, and runs the **same** compose stack and order as release: pull (unless skip) → mysql/redis → setup profile → recreate `web` → extra profiles. `compose run` uses `--pull never` (Compose v5 dropped `--no-build` from the run subcommand). `up` uses `--no-build`. Optional `SMOKE_URL`. Writes `.deployed-tag` only after success.
 
 ```bash
 # Always printed on smoke failure; this is the supported one-liner:

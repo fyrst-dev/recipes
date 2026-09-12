@@ -5,7 +5,9 @@
 # Compose files (always from shop root COMPOSE_DIR):
 #   docker compose --env-file .env -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/compose.vps.yaml
 #
-# Never builds images. Callers pass --no-build / pull only.
+# Never builds images. `compose up` uses --no-build (valid on Compose v2.36 and v5.5.1).
+# `compose run` uses --pull never (both those versions reject --no-build on the run
+# subcommand; do not pass --build).
 
 vps_log() { printf '==> %s\n' "$*"; }
 vps_err() { printf 'ERROR: %s\n' "$*" >&2; }
@@ -51,6 +53,8 @@ vps_snapshot_cli_env() {
   CI_SMOKE_URL="${SMOKE_URL:-}"
   CI_PROFILES="${COMPOSE_PROFILES:-}"
   CI_ROLLBACK_ON_SMOKE_FAIL="${ROLLBACK_ON_SMOKE_FAIL:-}"
+  CI_SKIP_PULL="${SKIP_PULL:-}"
+  CI_PULL_POLICY="${PULL_POLICY:-}"
 }
 
 vps_restore_cli_env() {
@@ -60,6 +64,12 @@ vps_restore_cli_env() {
   COMPOSE_PROFILES="${CI_PROFILES:-${COMPOSE_PROFILES:-}}"
   if [[ -n "${CI_ROLLBACK_ON_SMOKE_FAIL:-}" ]]; then
     ROLLBACK_ON_SMOKE_FAIL="${CI_ROLLBACK_ON_SMOKE_FAIL}"
+  fi
+  if [[ -n "${CI_SKIP_PULL:-}" ]]; then
+    SKIP_PULL="${CI_SKIP_PULL}"
+  fi
+  if [[ -n "${CI_PULL_POLICY:-}" ]]; then
+    PULL_POLICY="${CI_PULL_POLICY}"
   fi
 }
 
@@ -78,15 +88,44 @@ vps_require_sot() {
 
 vps_derive_identity() {
   SHOPWARE_DATA_BASE="${SHOPWARE_DATA_BASE:-$DEFAULT_DATA_BASE}"
+  local derived_project="${SHOPWARE_SHOP_ID}-${SHOPWARE_DEPLOY_ENV}"
   if [[ -z "${COMPOSE_PROJECT_NAME:-}" ]]; then
-    COMPOSE_PROJECT_NAME="${SHOPWARE_SHOP_ID}-${SHOPWARE_DEPLOY_ENV}"
+    COMPOSE_PROJECT_NAME="$derived_project"
     vps_log "COMPOSE_PROJECT_NAME unset; derived ${COMPOSE_PROJECT_NAME}"
+  elif [[ "$COMPOSE_PROJECT_NAME" != "$derived_project" ]]; then
+    vps_warn "COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME} is set and overrides Compose name: (${derived_project})."
+    vps_warn "shopware-cli project create writes COMPOSE_PROJECT_NAME=sw-shop-… into .env for local project dev."
+    vps_warn "On the VPS, remove or comment out that line so the project name is ${derived_project}."
+    vps_warn "This script does not delete it (create owns the local flow)."
   fi
   if [[ -z "${SHOPWARE_DATA_ROOT:-}" ]]; then
     SHOPWARE_DATA_ROOT="${SHOPWARE_DATA_BASE}/${SHOPWARE_SHOP_ID}/${SHOPWARE_DEPLOY_ENV}"
     vps_log "SHOPWARE_DATA_ROOT unset; derived ${SHOPWARE_DATA_ROOT}"
   fi
   export IMAGE IMAGE_TAG COMPOSE_PROJECT_NAME SHOPWARE_DATA_ROOT SHOPWARE_SHOP_ID SHOPWARE_DEPLOY_ENV SHOPWARE_DATA_BASE
+}
+
+# Default pull_policy is always (CI/VPS after a registry push).
+# Same-host tag-and-load / air-gap: SKIP_PULL=1 or PULL_POLICY=never.
+vps_apply_pull_policy() {
+  if vps_env_truthy "${SKIP_PULL:-}"; then
+    PULL_POLICY=never
+    SKIP_PULL=1
+  else
+    local p
+    p="$(printf '%s' "${PULL_POLICY:-always}" | tr '[:upper:]' '[:lower:]')"
+    PULL_POLICY="$p"
+    if [[ "$PULL_POLICY" == "never" ]]; then
+      SKIP_PULL=1
+    else
+      SKIP_PULL=0
+    fi
+  fi
+  export PULL_POLICY SKIP_PULL
+}
+
+vps_skip_pull() {
+  vps_env_truthy "${SKIP_PULL:-}" || [[ "${PULL_POLICY:-always}" == "never" ]]
 }
 
 vps_init_compose() {
@@ -209,40 +248,52 @@ vps_print_smoke_rollback_hint() {
 }
 
 vps_rollout() {
-  vps_log "Deploying ${IMAGE}:${IMAGE_TAG} from ${COMPOSE_DIR} (pull + --no-build, never compile themes/assets)"
+  local -a up_pull=()
+  if vps_skip_pull; then
+    up_pull=(--pull never)
+  fi
+  vps_log "Deploying ${IMAGE}:${IMAGE_TAG} from ${COMPOSE_DIR} (never compile themes/assets; compose run --pull never, up --no-build)"
   if [[ "${VPS_DRY_RUN}" -eq 1 ]]; then
-    vps_log "DRY-RUN ${COMPOSE_STR} ${PROFILE_ARGS[*]+${PROFILE_ARGS[*]}} pull"
+    if vps_skip_pull; then
+      vps_log "DRY-RUN skip compose pull (SKIP_PULL=1 / PULL_POLICY=never)"
+    else
+      vps_log "DRY-RUN ${COMPOSE_STR} ${PROFILE_ARGS[*]+${PROFILE_ARGS[*]}} pull"
+    fi
     vps_log "DRY-RUN start mysql/redis if present, then:"
-    vps_log "DRY-RUN ${COMPOSE_STR} --profile setup run --rm --no-build setup"
-    vps_log "DRY-RUN ${COMPOSE_STR} up -d --no-build --remove-orphans web"
+    vps_log "DRY-RUN ${COMPOSE_STR} --profile setup run --rm --pull never setup"
+    vps_log "DRY-RUN ${COMPOSE_STR} up -d --no-build ${up_pull[*]+${up_pull[*]}} --remove-orphans web"
     if [[ ${#PROFILE_ARGS[@]} -gt 0 ]]; then
       vps_log "DRY-RUN extra profiles: ${COMPOSE_PROFILES}"
     fi
     return
   fi
 
-  vps_log "Pulling images"
-  "${COMPOSE[@]}" "${PROFILE_ARGS[@]}" pull
+  if vps_skip_pull; then
+    vps_log "Skipping registry pull (SKIP_PULL=1 / PULL_POLICY=${PULL_POLICY}); using images already on this host"
+  else
+    vps_log "Pulling images"
+    "${COMPOSE[@]}" "${PROFILE_ARGS[@]}" pull
+  fi
 
   if vps_has_service mysql; then
     vps_log "Starting mysql"
-    "${COMPOSE[@]}" up -d --no-build mysql
+    "${COMPOSE[@]}" up -d --no-build ${up_pull[@]+"${up_pull[@]}"} mysql
   fi
 
   if vps_has_service redis || [[ "${COMPOSE_PROFILES:-}" == *redis* ]]; then
     vps_log "Starting redis"
-    "${COMPOSE[@]}" --profile redis up -d --no-build redis
+    "${COMPOSE[@]}" --profile redis up -d --no-build ${up_pull[@]+"${up_pull[@]}"} redis
   fi
 
   vps_log "One-shot setup (shopware-deployment-helper, skip theme/assets)"
-  "${COMPOSE[@]}" --profile setup run --rm --no-build setup
+  "${COMPOSE[@]}" --profile setup run --rm --pull never setup
 
   vps_log "Recreating web (no build)"
-  "${COMPOSE[@]}" up -d --no-build --remove-orphans web
+  "${COMPOSE[@]}" up -d --no-build ${up_pull[@]+"${up_pull[@]}"} --remove-orphans web
 
   if [[ ${#PROFILE_ARGS[@]} -gt 0 ]]; then
     vps_log "Starting extra profiles: ${COMPOSE_PROFILES}"
-    "${COMPOSE[@]}" "${PROFILE_ARGS[@]}" up -d --no-build
+    "${COMPOSE[@]}" "${PROFILE_ARGS[@]}" up -d --no-build ${up_pull[@]+"${up_pull[@]}"}
   fi
 }
 
@@ -279,6 +330,7 @@ vps_bootstrap() {
   vps_require_image
   vps_require_sot
   vps_derive_identity
+  vps_apply_pull_policy
   touch .env.prod
   vps_init_compose
   vps_parse_profiles

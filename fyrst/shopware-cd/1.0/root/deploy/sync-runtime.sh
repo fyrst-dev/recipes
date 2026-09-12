@@ -301,6 +301,12 @@ derive_compose_project_name() {
   if [[ -n "${COMPOSE_PROJECT_NAME:-}" ]]; then
     PROJECT_NAME=$COMPOSE_PROJECT_NAME
     export COMPOSE_PROJECT_NAME
+    if [[ -n "${SHOPWARE_SHOP_ID:-}" && -n "${SHOPWARE_DEPLOY_ENV:-}" ]]; then
+      local derived_project="${SHOPWARE_SHOP_ID}-${SHOPWARE_DEPLOY_ENV}"
+      if [[ "$COMPOSE_PROJECT_NAME" != "$derived_project" ]]; then
+        log "WARNING: COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME} is set and overrides Compose name: (${derived_project}). shopware-cli project create writes COMPOSE_PROJECT_NAME=sw-shop-… into .env for local project dev. On the VPS, remove or comment out that line. This script does not delete it."
+      fi
+    fi
     return
   fi
   if [[ -n "${SHOPWARE_SHOP_ID:-}" && -n "${SHOPWARE_DEPLOY_ENV:-}" ]]; then
@@ -1381,7 +1387,7 @@ post_restore_hints() {
   fi
   if [[ -n "${IMAGE:-}" ]]; then
     log "Trying cache:clear (non-fatal if the image/console is unavailable)"
-    if ! "${COMPOSE[@]}" run --rm --no-build --entrypoint php web bin/console cache:clear; then
+    if ! "${COMPOSE[@]}" run --rm --pull never --entrypoint php web bin/console cache:clear; then
       log "cache:clear skipped or failed — not fatal"
     fi
   fi

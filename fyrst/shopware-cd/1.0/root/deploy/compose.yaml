@@ -36,6 +36,10 @@
 # (acme-live_mysql_data vs acme-staging_mysql_data).
 # Do not hardcode `name: shopware` (collides when several shops/envs share a host).
 # Do not set COMPOSE_PROJECT_NAME= (empty) in .env — that env var overrides name:.
+# shopware-cli project create writes COMPOSE_PROJECT_NAME=sw-shop-… into .env
+# for local `project dev`. That value also overrides name:. On the VPS, remove
+# or comment out that line so Compose uses shop id + deploy env. This recipe
+# does not delete it (create owns the local flow).
 #
 # Runtime uploads are bind mounts (not named volumes):
 #   ${SHOPWARE_DATA_BASE:-/var/lib/shopware/data}/${SHOPWARE_SHOP_ID}/${SHOPWARE_DEPLOY_ENV}

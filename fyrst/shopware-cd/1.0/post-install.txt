@@ -5,7 +5,9 @@
     (same idea as <comment>shopware/docker</comment> copying <comment>docker/Dockerfile</comment>).
 
     <comment>compose.yaml</comment>, <comment>.gitignore</comment>, and
-    <comment>.shopware-project.yaml</comment> are owned by
+    <comment>.shopware-project.yml</comment> (create’s default;
+    <comment>.shopware-project.yaml</comment> is also accepted — do not rename)
+    are owned by
     <comment>shopware-cli project create</comment> / the CLI — not this recipe.
 
     Local: <comment>shopware-cli project dev</comment> and the CLI-managed
@@ -36,6 +38,13 @@
     <comment>COMPOSE_PROJECT_NAME</comment> or <comment>SHOPWARE_DATA_ROOT</comment>
     (optional for scripts/docs; scripts derive when unset and prefer them
     when set — do not assign them empty).
+    WARNING: <comment>shopware-cli project create</comment> writes
+    <comment>COMPOSE_PROJECT_NAME=sw-shop-…</comment> into shop-root
+    <comment>.env</comment> for local <comment>project dev</comment>. That env var
+    overrides Compose <comment>name:</comment>
+    (<comment>${SHOPWARE_SHOP_ID}-${SHOPWARE_DEPLOY_ENV}</comment>).
+    On the VPS, remove or comment out that line. This recipe does not delete it
+    (create owns the local flow).
     Bootstrap:
     <comment>DATA="${SHOPWARE_DATA_BASE:-/var/lib/shopware/data}/${SHOPWARE_SHOP_ID}/${SHOPWARE_DEPLOY_ENV}"</comment>
     then <comment>mkdir -p "${DATA}"/{files,media,thumbnail,theme,sitemap}</comment>
@@ -46,6 +55,10 @@
     this unset unless you need async tasks.
     <comment>deploy/vps-release.sh</comment> warns on live when it is empty; it does
     not auto-enable.
+    Same-host tag-and-load / air-gap: <comment>PULL_POLICY=never</comment>
+    and <comment>SKIP_PULL=1</comment> (or
+    <comment>bash deploy/vps-release.sh --skip-pull</comment>). Default
+    <comment>pull_policy</comment> is <comment>always</comment> for CI/VPS.
     Several shops or live+staging on one VPS share the host; shop id + env
     keep stacks isolated.
 
@@ -58,8 +71,10 @@
     Copy <comment>.env.example</comment> → <comment>.env</comment> yourself (Flex never writes <comment>.env</comment>).
     Commit the copied files; <comment>vendor/</comment> is gitignored.
 
-    shopware-cli loads <comment>.shopware-project.yaml</comment> from create (and still
-    accepts <comment>.shopware-project.yml</comment>). GitHub Actions picks up
+    shopware-cli project create writes <comment>.shopware-project.yml</comment>
+    (that extension is fine). shopware-cli accepts both
+    <comment>.yml</comment> and <comment>.yaml</comment>; do not rename.
+    GitHub Actions picks up
     <comment>.github/workflows/cd.yaml</comment>. GitLab still defaults to
     <comment>.gitlab-ci.yml</comment>: set Settings → CI/CD → CI/CD configuration file
     to <comment>.gitlab-ci.yaml</comment> (or copy/symlink that name).
