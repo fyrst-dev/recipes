@@ -87,7 +87,8 @@ Options:
 Environment (no secrets in this script; see deploy/sync.env.example):
   SYNC_ENV               Consumer name. restore/sync refuse SYNC_ENV=live
                          and SHOPWARE_DEPLOY_ENV=live (also refused when the
-                         checkout directory is named live)
+                         checkout directory is named live) unless
+                         SYNC_ALLOW_LIVE_RESTORE=1 (backup DR only)
   SHOPWARE_SHOP_ID       Stable shop slug (required on VPS)
   SHOPWARE_DEPLOY_ENV    This host's stack role (live|staging|playground|dev)
   SHOPWARE_DATA_BASE     Prefix helper (default /var/lib/shopware/data)
@@ -407,7 +408,11 @@ is_live_consumer() {
 
 assert_not_live_restore() {
   if is_live_consumer; then
-    die "Refusing restore/sync on a live host (SYNC_ENV=${SYNC_ENV:-unset}, SHOPWARE_DEPLOY_ENV=${SHOPWARE_DEPLOY_ENV:-unset}, checkout=$(basename "$COMPOSE_DIR"), hostname=${HOST_SHORT_LC}). Runtime sync is pull-only onto staging/playground/dev."
+    if [[ "${SYNC_ALLOW_LIVE_RESTORE:-}" == "1" ]]; then
+      log "WARNING: SYNC_ALLOW_LIVE_RESTORE=1 — restoring onto a live host (disaster recovery). This is not the live→staging sync path. See deploy/backup-runtime.md."
+      return
+    fi
+    die "Refusing restore/sync on a live host (SYNC_ENV=${SYNC_ENV:-unset}, SHOPWARE_DEPLOY_ENV=${SHOPWARE_DEPLOY_ENV:-unset}, checkout=$(basename "$COMPOSE_DIR"), hostname=${HOST_SHORT_LC}). Runtime sync is pull-only onto staging/playground/dev. Live backups use deploy/backup-runtime.sh; live restore is BACKUP_ALLOW_LIVE_RESTORE=1 (quarterly DR drill)."
   fi
 }
 

@@ -46,7 +46,7 @@ GitHub: Actions variable `DEPLOY_TARGET`. GitLab: CI/CD variable `DEPLOY_TARGET`
   ```
 
 - [ ] Health/smoke URL after rollout
-- [ ] Rollback: redeploy the previous `:sha` tag
+- [ ] Rollback: redeploy the previous `:sha` tag (`deploy/vps-rollback.sh` on Compose)
 
 The managed jobs in `.github/workflows/cd.yaml` and `.gitlab-ci.yaml` are **stubs**: they fail with a clear message until you replace the script with the host’s CLI. That is intentional — do not copy a fake happy-path.
 

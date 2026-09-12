@@ -15,6 +15,11 @@
     <comment>deploy/compose.vps.yaml</comment>).
     Runtime DB/bind-mount copy between VPS hosts:
     <comment>deploy/sync-runtime.sh</comment> (see <comment>deploy/sync-runtime.md</comment>).
+    Live backups (not sync): <comment>deploy/backup-runtime.sh</comment>
+    (see <comment>deploy/backup-runtime.md</comment>).
+    Rollback: <comment>deploy/vps-rollback.sh</comment>
+    (<comment>IMAGE_TAG=$(cat .previous-tag) bash deploy/vps-rollback.sh</comment>).
+    TLS edge: <comment>deploy/edge/Caddyfile</comment>.
     Live → local project dev rsync (no DB): <comment>deploy/sync-runtime-local.sh</comment>
     (reads <comment>SHOPWARE_SHOP_ID</comment> from local <comment>.env</comment>;
     remote root <comment>/var/lib/shopware/data/${SHOPWARE_SHOP_ID}/live</comment>).
