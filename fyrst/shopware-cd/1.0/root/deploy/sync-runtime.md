@@ -8,7 +8,7 @@ For a **local** `shopware-cli project dev` tree (path remap into `./public/media
 
 This is **not** part of image CD. `deploy/vps-release.sh` is unchanged (pull image, setup helper, recreate `web`). Runtime files stay out of git and out of the Shopware app image (`/.dockerignore` already excludes `/deploy` and `/var`).
 
-Object storage (S3 and similar) is **out of scope** for this VPS path. Transfer is SSH + `mysqldump`/`mariadb-dump` + **rsync of bind-mount directories** under `SHOPWARE_DATA_ROOT`. Named-volume docker-tar is only a fallback if those directories are missing.
+Object storage (S3 and similar) is **out of scope** for this VPS path. Transfer is SSH + **`shopware-cli project dump`** (gzip SQL) + **rsync of bind-mount directories** under `SHOPWARE_DATA_ROOT`. Named-volume docker-tar is only a fallback if those directories are missing. Restore still uses the MySQL/MariaDB client (shopware-cli does not replace import).
 
 After recipe updates: `composer recipes:update fyrst/shopware-cd`, then `bash deploy/init-env.sh` (or merge new `.env.example` keys (`SHOPWARE_SHOP_ID`, `SHOPWARE_DEPLOY_ENV`, optional `SHOPWARE_DATA_BASE`) into each environment's `.env` by hand). `COMPOSE_PROJECT_NAME` / `SHOPWARE_DATA_ROOT` are optional script overrides — Compose does not require them.
 
@@ -62,7 +62,7 @@ Default `--data all` (same as omitting `--data`):
 
 | Item | Mechanism |
 | --- | --- |
-| `db` | Logical SQL dump from the bundled compose `mysql` service (or `DATABASE_URL` on this host) |
+| `db` | Logical SQL dump via `shopware-cli project dump` (one-shot `ghcr.io/shopware/shopware-cli:0.18.4` on the Compose network, or `--network host` for `DATABASE_URL`). Restore is still `mysql`/`mariadb` client import. |
 | `media` `files` `thumbnail` `theme` `sitemap` | rsync of `$SHOPWARE_DATA_ROOT/<item>/` (source → dest). Tar + docker extract if rsync cannot write uid 82; named-volume tar only if the bind-mount dir is missing |
 
 Do not put dumps in git.
@@ -74,8 +74,9 @@ On **every** VPS that snapshots or restores:
 - Docker Engine + Compose v2 plugin
 - bash
 - OpenSSH client
-- gzip
+- gzip (restore + bind-mount tar fallback)
 - **rsync** (incremental live → staging of bind-mount trees; tar is the fallback)
+- Registry access to pull **`ghcr.io/shopware/shopware-cli:0.18.4`** (dumps). The compose `web` image does **not** ship shopware-cli.
 
 The SSH user must be able to run `docker` (typically the `docker` group). Direct rsync into `SHOPWARE_DATA_ROOT` needs write access (cron as root, or the script chowns via a one-shot container).
 
@@ -102,7 +103,7 @@ Run from the **shop root** (or rely on the script `cd` to the parent of `deploy/
 # Preview (no dump/copy/restore)
 bash deploy/sync-runtime.sh sync --from live --data all --dry-run
 
-# Cron path: dump live DB, rsync SHOPWARE_DATA_ROOT trees, restore DB here
+# Cron path: shopware-cli dump of live DB, rsync SHOPWARE_DATA_ROOT trees, restore DB here
 bash deploy/sync-runtime.sh sync --from live --data all
 
 # Snapshot only (this host → --snapshot-dir)
@@ -124,6 +125,31 @@ Flags:
 | `--snapshot-dir <dir>` | Default `<shop>/var/runtime-sync` (Shopware `/var` is gitignored) |
 | `--dry-run` | Log actions only |
 | `--skip-db` / `--skip-volumes` | Subtract db or the bind-mount trees from `--data` |
+
+### Database dump (`shopware-cli project dump`)
+
+Production Shopware images do **not** include shopware-cli. Sync/backup start a **one-shot container** from the pinned official image, join the Compose network so hostname `mysql` resolves, and mount the shop root so `.env` / `.shopware-project.yml` (`dump.ignore` / `dump.rewrite`) are visible:
+
+```text
+docker run --rm --network ${COMPOSE_PROJECT_NAME}_default \
+  -v <shop-root>:<shop-root>:ro -v <snapshot-dir>:<snapshot-dir> -w <shop-root> \
+  ghcr.io/shopware/shopware-cli:0.18.4 \
+  --no-update-hint project dump \
+  --skip-lock-tables --quick --clean --compression=gzip \
+  --output <snapshot-dir>/db.sql.gz \
+  --host mysql --port 3306 --username … --database …
+```
+
+Pin: **`ghcr.io/shopware/shopware-cli:0.18.4`**. Override with `SYNC_SHOPWARE_CLI_IMAGE`. If the image cannot be pulled, the script **fails** with `docker pull` guidance — it does **not** fall back to mysqldump. Escape hatch: `SYNC_DUMP_ENGINE=mysqldump`.
+
+| Env | Default | Effect |
+| --- | --- | --- |
+| `SYNC_DUMP_CLEAN` | `1` | `--clean` (skip cart / messenger / log noise). `0` keeps those rows. |
+| `SYNC_DUMP_ANONYMIZE` | `0` | `1` adds `--anonymize` (usually off for live→staging) |
+| `SYNC_DUMP_QUICK` | `1` | `--quick`. `0` opts out. |
+| `SYNC_DUMP_ENGINE` | `shopware-cli` | `mysqldump` = old compose-exec / client-image dump |
+
+Restore is unchanged: `gzip -dc db.sql.gz` piped into `mysql`/`mariadb` (compose exec or `--network host` client). shopware-cli is dump-only.
 
 ### Cron (consumer)
 
@@ -165,7 +191,7 @@ Overlapping runs are blocked with `flock` on `var/runtime-sync.lock`.
 
 ## External database
 
-If the bundled `mysql` service was removed, a **local** snapshot/restore uses `DATABASE_URL` and a one-shot `mysql`/`mariadb` client container (`--network host`). A **remote** dump over SSH requires the source to still have compose `mysql`, or run `snapshot --from local` on the source and copy `var/runtime-sync` yourself.
+If the bundled `mysql` service was removed, a **local** snapshot uses `shopware-cli project dump` with `--network host` and credentials from `DATABASE_URL`. Restore still uses a one-shot `mysql`/`mariadb` client container (`--network host`). A **remote** dump over SSH requires the source to still have compose `mysql`, or run `snapshot --from local` on the source and copy `var/runtime-sync` yourself.
 
 ## Named-volume fallback
 

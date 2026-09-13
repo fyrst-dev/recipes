@@ -17,6 +17,8 @@
     <comment>deploy/compose.vps.yaml</comment>).
     Runtime DB/bind-mount copy between VPS hosts:
     <comment>deploy/sync-runtime.sh</comment> (see <comment>deploy/sync-runtime.md</comment>).
+    DB snapshots use <comment>shopware-cli project dump</comment>
+    (<comment>ghcr.io/shopware/shopware-cli:0.18.4</comment> one-shot; restore is still mysql).
     Live backups (not sync): <comment>deploy/backup-runtime.sh</comment>
     (see <comment>deploy/backup-runtime.md</comment>).
     Rollback: <comment>deploy/vps-rollback.sh</comment>
