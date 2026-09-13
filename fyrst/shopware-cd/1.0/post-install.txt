@@ -26,6 +26,14 @@
     (reads <comment>SHOPWARE_SHOP_ID</comment> from local <comment>.env</comment>;
     remote root <comment>/var/lib/shopware/data/${SHOPWARE_SHOP_ID}/live</comment>).
 
+    Flex may append a <comment>###> fyrst/shopware-cd ###</comment>
+    block to shop-root <comment>.env</comment> (empty
+    <comment>SHOPWARE_SHOP_ID</comment>, <comment>SHOPWARE_DEPLOY_ENV=live</comment>,
+    <comment>SHOPWARE_DATA_BASE=/var/lib/shopware/data</comment>).
+    It does not overwrite create’s whole <comment>.env</comment>
+    and does not put secrets in that block. Then run
+    <comment>bash deploy/init-env.sh --shop-id …</comment>
+    (see <comment>deploy/README</comment>).
     VPS <comment>.env</comment> source of truth (required):
     <comment>SHOPWARE_SHOP_ID</comment> (same slug on live + staging + laptop),
     <comment>SHOPWARE_DEPLOY_ENV</comment> (live|staging|playground|dev).
@@ -43,7 +51,9 @@
     <comment>.env</comment> for local <comment>project dev</comment>. That env var
     overrides Compose <comment>name:</comment>
     (<comment>${SHOPWARE_SHOP_ID}-${SHOPWARE_DEPLOY_ENV}</comment>).
-    On the VPS, remove or comment out that line. This recipe does not delete it
+    On the VPS, comment out that line
+    (<comment>bash deploy/init-env.sh --vps</comment> or by hand).
+    Flex does not delete it on <comment>composer require</comment>
     (create owns the local flow).
     Bootstrap:
     <comment>DATA="${SHOPWARE_DATA_BASE:-/var/lib/shopware/data}/${SHOPWARE_SHOP_ID}/${SHOPWARE_DEPLOY_ENV}"</comment>
@@ -68,8 +78,13 @@
     does not ship a root Dockerfile. A missing <comment>docker/Dockerfile</comment>
     means <comment>shopware/docker</comment> was skipped.
 
-    Copy <comment>.env.example</comment> → <comment>.env</comment> yourself (Flex never writes <comment>.env</comment>).
-    Commit the copied files; <comment>vendor/</comment> is gitignored.
+    Flex may append SoT keys to <comment>.env</comment>; it does not
+    overwrite create’s whole <comment>.env</comment>. Then run
+    <comment>bash deploy/init-env.sh --shop-id …</comment>
+    (VPS: add <comment>--vps</comment>; see <comment>deploy/README</comment>).
+    If <comment>.env</comment> is missing, that script copies
+    <comment>.env.example</comment> first. Commit the copied files;
+    <comment>vendor/</comment> is gitignored.
 
     shopware-cli project create writes <comment>.shopware-project.yml</comment>
     (that extension is fine). shopware-cli accepts both

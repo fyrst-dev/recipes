@@ -19,11 +19,11 @@
 # WARNING: `shopware-cli project create` writes `COMPOSE_PROJECT_NAME=sw-shop-…`
 # into shop-root `.env` for local `project dev`. That env var **overrides**
 # Compose `name:` (`${SHOPWARE_SHOP_ID}-${SHOPWARE_DEPLOY_ENV}`). On the VPS,
-# **remove or comment out** that line. This recipe does not delete it (create
-# owns the local flow). `deploy/vps-release.sh` warns when the value does not
-# match shop id + deploy env.
-# After recipe changes: `composer recipes:update fyrst/shopware-cd` then merge
-# new keys from `.env.example` into each shop's `.env`.
+# **comment out** that line: `bash deploy/init-env.sh --vps` (or by hand).
+# Flex does not delete it on `composer require` (create owns the local flow).
+# `deploy/vps-release.sh` warns when the value does not match shop id + deploy env.
+# After recipe changes: `composer recipes:update fyrst/shopware-cd` then
+# `bash deploy/init-env.sh` (or merge new keys from `.env.example` by hand).
 
 ## Model
 
@@ -32,17 +32,54 @@
 - **mysql** — bundled in Compose, or delete the service and point `DATABASE_URL` at DBaaS. Prod overlay keeps `ports: []`.
 - **redis** / **worker** / **scheduler** — Compose profiles. **Live recommendation:** `COMPOSE_PROFILES=redis,worker,scheduler` (uncomment in `.env`). Staging leaves this unset unless you intentionally need async/scheduled tasks. `deploy/vps-release.sh` warns on live when the variable is empty; it does **not** auto-enable profiles.
 
+## Shop-root `.env` after create (Flex + `deploy/init-env.sh`)
+
+`shopware-cli project create` writes `.env`. Flex may append a marked block
+(safe defaults only — empty shop id, no secrets):
+
+```bash
+###> fyrst/shopware-cd ###
+SHOPWARE_SHOP_ID=
+SHOPWARE_DEPLOY_ENV=live
+SHOPWARE_DATA_BASE=/var/lib/shopware/data
+###< fyrst/shopware-cd ###
+```
+
+Finish shop-specific values **without** replacing the whole file:
+
+```bash
+# laptop / after composer require
+bash deploy/init-env.sh --shop-id acme
+
+# VPS: set identity, optional IMAGE, comment out create's COMPOSE_PROJECT_NAME
+bash deploy/init-env.sh --shop-id acme --env live --vps --image ghcr.io/fyrst-dev/shop-name
+
+# optional: APP_SECRET only if empty
+bash deploy/init-env.sh --shop-id acme --generate-app-secret
+
+# preview
+bash deploy/init-env.sh --shop-id acme --vps --dry-run
+```
+
+`--shop-id` is required unless `SHOPWARE_SHOP_ID` is already non-empty.
+`--env` is `live` | `staging` | `playground` | `dev` (default `live` when
+unset/empty; an existing non-empty value is kept). The script copies
+`.env.example` → `.env` when `.env` is missing, then merges **missing** keys
+from `.env.example` without clobbering existing non-empty values. It does
+**not** invent `MYSQL_*` passwords or `APP_URL`.
+
 ## One-time VPS bootstrap
 
 1. Install Docker Engine + Compose plugin. Do not install Shopware or PHP on the host.
 2. Checkout this shop repo (read-only deploy key) to a path such as `/opt/shopware/<shop>`.
    That path is `VPS_PATH` in CI.
-3. Copy `.env.example` → `.env` and fill runtime secrets. `chmod 600 .env`.
-   Required source of truth:
+3. Finish `.env` (Flex may already have appended SoT keys). `chmod 600 .env`.
 
    ```bash
-   SHOPWARE_SHOP_ID=acme
-   SHOPWARE_DEPLOY_ENV=live          # this host's role
+   bash deploy/init-env.sh --shop-id acme --env live --vps --image ghcr.io/fyrst-dev/shop-name
+   # equivalent keys:
+   # SHOPWARE_SHOP_ID=acme
+   # SHOPWARE_DEPLOY_ENV=live          # this host's role
    # optional: SHOPWARE_DATA_BASE=/var/lib/shopware/data
    ```
 
@@ -53,11 +90,13 @@
    prefer them when set) for logs and tools.
 
    **Do not copy create’s `COMPOSE_PROJECT_NAME=sw-shop-…` onto the VPS.**
-   That line overrides Compose `name:`. Remove or comment it out in the VPS
-   `.env`. Local `shopware-cli project dev` can keep it; this recipe does not
-   delete it (create owns the local flow).
+   That line overrides Compose `name:`. Comment it out with
+   `bash deploy/init-env.sh --vps` (or by hand). Local `shopware-cli project dev`
+   can keep it; Flex does not delete it on `composer require` (create owns
+   the local flow).
 4. Create `.env.prod` (may be empty) so `deploy/compose.prod.yaml` can mount it.
-5. Set `IMAGE` to the registry repository CI pushes (example: `ghcr.io/fyrst-dev/shop-name`).
+5. Set `IMAGE` to the registry repository CI pushes (example: `ghcr.io/fyrst-dev/shop-name`)
+   (`--image` on `init-env.sh`, or by hand).
 6. Create the runtime upload bind mounts (uid 82 = www-data in docker-base):
 
    ```bash

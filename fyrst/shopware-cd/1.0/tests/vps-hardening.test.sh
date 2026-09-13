@@ -37,7 +37,8 @@ for s in \
   "$DEPLOY/vps-rollback.sh" \
   "$DEPLOY/backup-runtime.sh" \
   "$DEPLOY/sync-runtime.sh" \
-  "$DEPLOY/sync-runtime-local.sh"
+  "$DEPLOY/sync-runtime-local.sh" \
+  "$DEPLOY/init-env.sh"
 do
   if bash -n "$s"; then
     pass "bash -n $(basename "$s")"
@@ -48,8 +49,8 @@ done
 
 if command -v shellcheck >/dev/null 2>&1; then
   echo "==> shellcheck"
-  if shellcheck -x "$DEPLOY/vps-release.sh" "$DEPLOY/vps-rollback.sh" "$DEPLOY/backup-runtime.sh" "$DEPLOY/lib/vps-common.sh" "$DEPLOY/lib/sync-rewrite.sh"; then
-    pass "shellcheck release/rollback/backup/lib"
+  if shellcheck -x "$DEPLOY/vps-release.sh" "$DEPLOY/vps-rollback.sh" "$DEPLOY/backup-runtime.sh" "$DEPLOY/lib/vps-common.sh" "$DEPLOY/lib/sync-rewrite.sh" "$DEPLOY/init-env.sh"; then
+    pass "shellcheck release/rollback/backup/lib/init-env"
   else
     fail "shellcheck"
   fi
@@ -68,6 +69,7 @@ assert_file "$DEPLOY/backup.env.example"
 assert_file "$DEPLOY/edge/Caddyfile"
 assert_file "$DEPLOY/edge/README.md"
 assert_file "$DEPLOY/lib/vps-common.sh"
+assert_exec "$DEPLOY/init-env.sh"
 
 echo "==> healthcheck path (#14)"
 if grep -q "php -r 'exit(0);'" "$DEPLOY/compose.yaml"; then
@@ -500,9 +502,22 @@ else
 fi
 if grep -q 'does not delete it' "$ROOT/post-install.txt" \
   && grep -q 'does not delete it' "$DEPLOY/README.md"; then
-  pass "docs say the recipe does not delete create's COMPOSE_PROJECT_NAME"
+  pass "docs say Flex does not delete create's COMPOSE_PROJECT_NAME"
 else
   fail "docs missing do-not-auto-delete wording"
+fi
+if grep -q 'init-env.sh --vps' "$ROOT/post-install.txt" \
+  && grep -q 'init-env.sh --vps' "$DEPLOY/README.md" \
+  && grep -q 'init-env.sh --vps' "$ROOT/root/.env.example"; then
+  pass "docs point at deploy/init-env.sh --vps for the VPS footgun"
+else
+  fail "docs missing deploy/init-env.sh --vps"
+fi
+if grep -q 'init-env.sh --shop-id' "$ROOT/post-install.txt" \
+  && grep -q '###> fyrst/shopware-cd ###' "$DEPLOY/README.md"; then
+  pass "post-install + deploy README document Flex env + init-env --shop-id"
+else
+  fail "docs missing Flex env / init-env --shop-id"
 fi
 printf 'COMPOSE_PROJECT_NAME=sw-shop-acme\n' >>"$SHOP/.env"
 set +e
