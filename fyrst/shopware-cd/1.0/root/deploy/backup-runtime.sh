@@ -8,6 +8,8 @@
 #
 # Reuses dump/rsync helpers by calling:
 #   bash deploy/sync-runtime.sh snapshot --from local --data …
+# (sync-runtime dispatches into deploy/lib; identity/compose are the same
+# helpers as deploy/vps-release.sh via lib/vps-common.sh).
 # then copies that snapshot into a timestamped artifact under BACKUP_TARGET
 # (local path, second disk, or SSH). Retention prune is BACKUP_KEEP_DAYS.
 #

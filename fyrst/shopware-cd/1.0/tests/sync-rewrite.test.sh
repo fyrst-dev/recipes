@@ -118,11 +118,18 @@ if grep -q 'UPDATE sales_channel_domain' "$DEPLOY/sync-runtime.sh" \
 else
   pass "sync-runtime.sh does not UPDATE sales_channel_domain via SQL"
 fi
-if grep -q 'fyrst:sales-channel:rewrite-urls' "$DEPLOY/sync-runtime.sh" \
-  && grep -q 'run --rm --pull never --entrypoint php' "$DEPLOY/sync-runtime.sh"; then
-  pass "sync-runtime.sh calls fyrst:sales-channel:rewrite-urls via compose run"
+if grep -q 'fyrst:sales-channel:rewrite-urls' "$DEPLOY/lib/sync-rewrite.sh" \
+  && grep -q 'run --rm --pull never --entrypoint php' "$DEPLOY/lib/sync-rewrite.sh"; then
+  pass "sync-rewrite.sh calls fyrst:sales-channel:rewrite-urls via compose run"
 else
-  fail "sync-runtime.sh missing compose run of fyrst:sales-channel:rewrite-urls"
+  fail "sync-rewrite.sh missing compose run of fyrst:sales-channel:rewrite-urls"
+fi
+if grep -q 'do_snapshot' "$DEPLOY/sync-runtime.sh" \
+  && grep -q 'sync_bootstrap' "$DEPLOY/sync-runtime.sh" \
+  && ! grep -q '^dump_db_local()' "$DEPLOY/sync-runtime.sh"; then
+  pass "sync-runtime.sh is a thin dispatcher (dump_db_local lives in lib)"
+else
+  fail "sync-runtime.sh is not a thin dispatcher"
 fi
 
 echo "==> Flex bundle in manifest.json"

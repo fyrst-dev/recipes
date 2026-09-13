@@ -1,1 +1,3 @@
 source-path=SCRIPTDIR
+# Flags and SoT vars are assigned in entrypoints and consumed in sibling libs.
+disable=SC2034

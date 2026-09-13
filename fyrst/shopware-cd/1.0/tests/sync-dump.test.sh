@@ -25,21 +25,21 @@ if bash -n "$DEPLOY/lib/sync-dump.sh"; then
 else
   fail "bash -n sync-dump.sh"
 fi
+if bash -n "$DEPLOY/lib/sync-db.sh"; then
+  pass "bash -n sync-db.sh"
+else
+  fail "bash -n sync-db.sh"
+fi
 if bash -n "$DEPLOY/sync-runtime.sh"; then
   pass "bash -n sync-runtime.sh"
 else
   fail "bash -n sync-runtime.sh"
 fi
 if command -v shellcheck >/dev/null 2>&1; then
-  if shellcheck -x "$DEPLOY/lib/sync-dump.sh"; then
-    pass "shellcheck sync-dump.sh"
+  if shellcheck -x "$DEPLOY/lib/sync-dump.sh" "$DEPLOY/lib/sync-db.sh" "$DEPLOY/sync-runtime.sh"; then
+    pass "shellcheck sync-dump.sh + sync-db.sh + sync-runtime.sh"
   else
-    fail "shellcheck sync-dump.sh"
-  fi
-  if shellcheck -x "$DEPLOY/sync-runtime.sh"; then
-    pass "shellcheck sync-runtime.sh"
-  else
-    fail "shellcheck sync-runtime.sh"
+    fail "shellcheck dump/sync-runtime"
   fi
 else
   echo "==> shellcheck not installed (bash -n only)"
@@ -138,27 +138,27 @@ else
   fail "fail hint incomplete: $hint"
 fi
 
-echo "==> sync-runtime.sh dump path is shopware-cli; restore is mysql client"
-if grep -q 'run_shopware_cli_dump_local' "$DEPLOY/sync-runtime.sh" \
-  && grep -q 'dump_db_local_mysqldump' "$DEPLOY/sync-runtime.sh" \
-  && grep -q 'sync_dump_engine_is_mysqldump' "$DEPLOY/sync-runtime.sh"; then
+echo "==> dump/restore live in lib/sync-db.sh (entrypoint only dispatches)"
+if grep -q 'run_shopware_cli_dump_local' "$DEPLOY/lib/sync-db.sh" \
+  && grep -q 'dump_db_local_mysqldump' "$DEPLOY/lib/sync-db.sh" \
+  && grep -q 'sync_dump_engine_is_mysqldump' "$DEPLOY/lib/sync-db.sh"; then
   pass "dump_db_local dispatches shopware-cli vs mysqldump escape hatch"
 else
-  fail "sync-runtime.sh missing dump engine dispatch"
+  fail "sync-db.sh missing dump engine dispatch"
 fi
-if grep -A20 '^dump_db_local()' "$DEPLOY/sync-runtime.sh" | grep -q 'run_shopware_cli_dump_local'; then
+if grep -A20 '^dump_db_local()' "$DEPLOY/lib/sync-db.sh" | grep -q 'run_shopware_cli_dump_local'; then
   pass "dump_db_local default calls shopware-cli runner"
 else
   fail "dump_db_local does not call shopware-cli by default"
 fi
-if grep -q 'mysql_restore_sh' "$DEPLOY/sync-runtime.sh" \
-  && grep -q 'restore_db_via_url' "$DEPLOY/sync-runtime.sh"; then
+if grep -q 'mysql_restore_sh' "$DEPLOY/lib/sync-db.sh" \
+  && grep -q 'restore_db_via_url' "$DEPLOY/lib/sync-db.sh"; then
   pass "restore still uses mysql/mariadb client helpers"
 else
   fail "restore path lost mysql client import"
 fi
-if grep -q 'fyrst:sales-channel:rewrite-urls' "$DEPLOY/sync-runtime.sh" \
-  && grep -q 'run --rm --pull never --entrypoint php' "$DEPLOY/sync-runtime.sh"; then
+if grep -q 'fyrst:sales-channel:rewrite-urls' "$DEPLOY/lib/sync-rewrite.sh" \
+  && grep -q 'run --rm --pull never --entrypoint php' "$DEPLOY/lib/sync-rewrite.sh"; then
   pass "sales-channel rewrite path unchanged"
 else
   fail "rewrite path changed (must stay fyrst:sales-channel:rewrite-urls via compose run)"
@@ -171,19 +171,19 @@ else
 fi
 
 echo "==> mysqldump is not the default compose-exec path"
-if grep -A12 '^dump_db_local()' "$DEPLOY/sync-runtime.sh" | grep -q 'mysql_dump_sh'; then
+if grep -A12 '^dump_db_local()' "$DEPLOY/lib/sync-db.sh" | grep -q 'mysql_dump_sh'; then
   fail "dump_db_local still calls mysql_dump_sh directly"
 else
   pass "default dump_db_local does not compose-exec mysqldump"
 fi
-if grep -A8 '^dump_db_local_mysqldump()' "$DEPLOY/sync-runtime.sh" | grep -q 'mysql_dump_sh'; then
+if grep -A8 '^dump_db_local_mysqldump()' "$DEPLOY/lib/sync-db.sh" | grep -q 'mysql_dump_sh'; then
   pass "mysqldump compose-exec is only on dump_db_local_mysqldump"
 else
   fail "escape hatch dump_db_local_mysqldump lost mysql_dump_sh"
 fi
 # Restore may still exec mysql — that is required.
-if grep -q 'gzip -dc "$dump" | "${COMPOSE[@]}" exec -T mysql sh -c "$(mysql_restore_sh)"' "$DEPLOY/sync-runtime.sh" \
-  || grep -q 'mysql_restore_sh' "$DEPLOY/sync-runtime.sh"; then
+if grep -q 'gzip -dc "$dump" | "${COMPOSE[@]}" exec -T mysql sh -c "$(mysql_restore_sh)"' "$DEPLOY/lib/sync-db.sh" \
+  || grep -q 'mysql_restore_sh' "$DEPLOY/lib/sync-db.sh"; then
   pass "restore still pipes gzip into compose mysql/mariadb"
 else
   fail "restore lost gzip | mysql pipe"
