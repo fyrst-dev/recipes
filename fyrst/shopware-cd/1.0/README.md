@@ -22,7 +22,9 @@ docker compose --env-file .env -f deploy/compose.yaml -f deploy/compose.prod.yam
 
 (`deploy/vps-release.sh` / `deploy/vps-rollback.sh` run that from the shop root.)
 
-VPS runtime DB + bind-mount pull (no object storage): `deploy/sync-runtime.sh` — see `deploy/sync-runtime.md`. **Sync is not a backup** — live backups are `deploy/backup-runtime.sh`. Compose source of truth is `SHOPWARE_SHOP_ID` + `SHOPWARE_DEPLOY_ENV` (project name `acme-live`, uploads under `/var/lib/shopware/data/${SHOPWARE_SHOP_ID}/${SHOPWARE_DEPLOY_ENV}`). `COMPOSE_PROJECT_NAME` / `SHOPWARE_DATA_ROOT` are optional script overrides. **VPS:** remove create’s `COMPOSE_PROJECT_NAME=sw-shop-…` line from `.env` (it overrides Compose `name:`). Same-host tag-and-load: `PULL_POLICY=never` / `SKIP_PULL=1`.
+Flex `env` may append a `###> fyrst/shopware-cd ###` block to shop-root `.env` (empty `SHOPWARE_SHOP_ID`, `SHOPWARE_DEPLOY_ENV=live`, `SHOPWARE_DATA_BASE=/var/lib/shopware/data`). It does not overwrite create’s whole `.env`. Then run `bash deploy/init-env.sh --shop-id <slug>` (see `deploy/README.md`).
+
+VPS runtime DB + bind-mount pull (no object storage): `deploy/sync-runtime.sh` — see `deploy/sync-runtime.md`. **Sync is not a backup** — live backups are `deploy/backup-runtime.sh`. Compose source of truth is `SHOPWARE_SHOP_ID` + `SHOPWARE_DEPLOY_ENV` (project name `acme-live`, uploads under `/var/lib/shopware/data/${SHOPWARE_SHOP_ID}/${SHOPWARE_DEPLOY_ENV}`). `COMPOSE_PROJECT_NAME` / `SHOPWARE_DATA_ROOT` are optional script overrides. **VPS:** comment out create’s `COMPOSE_PROJECT_NAME=sw-shop-…` line (`bash deploy/init-env.sh --vps` or by hand; it overrides Compose `name:`). Same-host tag-and-load: `PULL_POLICY=never` / `SKIP_PULL=1`.
 
 Prod HTTP is loopback-only; host TLS is `deploy/edge/Caddyfile`. `web` healthcheck is `GET /api/_info/health-check` on `127.0.0.1:8000` inside the container.
 

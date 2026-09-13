@@ -60,7 +60,7 @@ composer require shopware/docker shopware/deployment-helper fyrst/shopware-cd
 - **Local:** `shopware-cli project dev` and the CLI-managed shop-root `compose.yaml`. Live → laptop uploads: `deploy/sync-runtime-local.sh`.
 - **VPS/CD:** files under `deploy/` (`deploy/compose.yaml`, `deploy/compose.prod.yaml`, `deploy/compose.vps.yaml`, `deploy/vps-release.sh`, `deploy/vps-rollback.sh`, `deploy/backup-runtime.sh`, `deploy/sync-runtime.sh`, `deploy/edge/`).
 
-Flex copies CI, `deploy/` (including CD Compose), `.dockerignore`, and `.env.example` into the shop root. Copy `.env.example` → `.env` yourself (Flex never writes `.env`). Commit the copied files; `vendor/` stays gitignored.
+Flex copies CI, `deploy/` (including CD Compose), `.dockerignore`, and `.env.example` into the shop root. The Flex `env` configurator may append a `###> fyrst/shopware-cd ###` block to `.env` (empty shop id, `SHOPWARE_DEPLOY_ENV=live`, `SHOPWARE_DATA_BASE=/var/lib/shopware/data`). It does not overwrite create’s whole `.env` and does not put secrets in that block. Then run `bash deploy/init-env.sh --shop-id <slug>` (VPS: add `--vps`; see `deploy/README.md`). Commit the copied files; `vendor/` stays gitignored.
 
 ## Update recipes
 
@@ -87,7 +87,7 @@ composer recipes:update fyrst/shopware-cd
 
 | Path | Role |
 |---|---|
-| `fyrst/shopware-cd/1.0/` | Current Flex recipe for Packagist package `fyrst/shopware-cd` (overlays live only here; Packagist package repo is https://github.com/fyrst-dev/shopware-cd). Ships CI, `deploy/` (CD Compose), `.dockerignore`, `.env.example`. Does not copy `compose.yaml`, `.gitignore`, or `.shopware-project.yml` / `.yaml` (`shopware-cli project create` / CLI). |
+| `fyrst/shopware-cd/1.0/` | Current Flex recipe for Packagist package `fyrst/shopware-cd` (overlays live only here; Packagist package repo is https://github.com/fyrst-dev/shopware-cd). Ships CI, `deploy/` (CD Compose, including `deploy/init-env.sh`), `.dockerignore`, `.env.example`. Flex `env` appends safe SoT keys to `.env`. Does not copy `compose.yaml`, `.gitignore`, or `.shopware-project.yml` / `.yaml` (`shopware-cli project create` / CLI). |
 | `.github/workflows/flex-update.yml` | Compiles recipes → `flex/main` |
 | `.github/workflows/flex-cleanup.yml` | Deletes Flex PR test refs |
 

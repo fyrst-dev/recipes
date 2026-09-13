@@ -11,7 +11,8 @@
 # VPS pull/no-build:    deploy/compose.vps.yaml
 #
 # Paths (build context, env_file) are relative to this file under deploy/;
-# shop root is `..`. Copy .env.example → .env at the shop root. No real secrets belong here.
+# shop root is `..`. Finish shop-root .env with deploy/init-env.sh (or copy
+# .env.example → .env by hand). No real secrets belong here.
 #
 # Bundled MySQL: service name `mysql` (DATABASE_URL host = mysql).
 # External DB:   set DATABASE_URL to the DBaaS DSN, delete or comment out
