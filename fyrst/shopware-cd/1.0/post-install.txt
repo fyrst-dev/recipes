@@ -94,5 +94,17 @@
     <comment>.gitlab-ci.yml</comment>: set Settings → CI/CD → CI/CD configuration file
     to <comment>.gitlab-ci.yaml</comment> (or copy/symlink that name).
 
+    Flex registers
+    <comment>Fyrst\ShopwareCd\FyrstShopwareCdBundle</comment>
+    in <comment>config/bundles.php</comment>.
+    Opt-in post-restore sales-channel URL rewrite:
+    set <comment>SYNC_REWRITE_APP_URL</comment> or
+    <comment>SYNC_REWRITE_URL_MAP</comment> in
+    <comment>deploy/sync.env</comment>; sync calls
+    <comment>bin/console fyrst:sales-channel:rewrite-urls</comment>.
+    Shops need <comment>composer update fyrst/shopware-cd</comment>
+    so the command and bundle exist, then
+    <comment>composer recipes:update fyrst/shopware-cd</comment>.
+
     Refresh later with <comment>composer recipes:update fyrst/shopware-cd</comment>.
     See https://github.com/fyrst-dev/shopware-cd

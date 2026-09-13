@@ -110,9 +110,9 @@ Environment (no secrets in this script; see deploy/sync.env.example):
   SYNC_REMOTE_PATH       Shop checkout on the source (required for SSH)
   SYNC_APP_URL           This environment's public URL (reminder after restore
                          when rewrite is off)
-  SYNC_REWRITE_APP_URL   Opt-in: after DB restore, rewrite sales_channel_domain
-                         origins to this URL (path kept). Example:
-                         https://staging.example.com
+  SYNC_REWRITE_APP_URL   Opt-in: after DB restore, run
+                         fyrst:sales-channel:rewrite-urls (origin replace,
+                         path kept). Example: https://staging.example.com
   SYNC_REWRITE_URL_MAP   Opt-in old=new[,old=new] prefix map (longest match first)
   SYNC_POST_RESTORE_CMD  Optional shell command after restore (non-fatal)
   SYNC_ARCHIVE_IMAGE     Image used to tar trees if rsync cannot (default alpine:3.20)
@@ -633,32 +633,6 @@ while [ "$i" -lt 40 ]; do
 done
 echo "mysql did not become ready" >&2
 exit 1
-EOS
-}
-
-# Runs $SYNC_MYSQL_SQL (set by the caller) and prints the result set (-N --batch).
-mysql_query_sh() {
-  cat <<'EOS'
-set -eu
-SQL="${SYNC_MYSQL_SQL:?}"
-DB="${MYSQL_DATABASE:-shopware}"
-if command -v mariadb >/dev/null 2>&1; then
-  CLI=mariadb
-elif command -v mysql >/dev/null 2>&1; then
-  CLI=mysql
-else
-  echo "Neither mysql nor mariadb client is in the mysql container" >&2
-  exit 1
-fi
-if "$CLI" -uroot --protocol=socket -e "SELECT 1" >/dev/null 2>&1; then
-  "$CLI" -uroot --protocol=socket --batch -N -e "$SQL" "$DB"
-elif [ -n "${MYSQL_ROOT_PASSWORD:-}" ] && "$CLI" -uroot -p"${MYSQL_ROOT_PASSWORD}" -h127.0.0.1 -e "SELECT 1" >/dev/null 2>&1; then
-  "$CLI" -uroot -p"${MYSQL_ROOT_PASSWORD}" -h127.0.0.1 --batch -N -e "$SQL" "$DB"
-elif [ -n "${MYSQL_USER:-}" ] && [ -n "${MYSQL_PASSWORD:-}" ] && "$CLI" -u"${MYSQL_USER}" -p"${MYSQL_PASSWORD}" -h127.0.0.1 -e "SELECT 1" >/dev/null 2>&1; then
-  "$CLI" -u"${MYSQL_USER}" -p"${MYSQL_PASSWORD}" -h127.0.0.1 --batch -N -e "$SQL" "$DB"
-else
-  "$CLI" -uroot --protocol=socket --batch -N -e "$SQL" "$DB"
-fi
 EOS
 }
 
@@ -1287,41 +1261,6 @@ start_stopped_app() {
   done
 }
 
-mysql_exec_sql() {
-  local sql=$1
-  if has_mysql_service_local; then
-    mysql_up_local
-    if [[ "$DRY_RUN" -eq 1 ]]; then
-      log "DRY-RUN mysql <<'SQL'"
-      printf '%s\n' "$sql"
-      return
-    fi
-    SYNC_MYSQL_SQL=$sql "${COMPOSE[@]}" exec -T -e SYNC_MYSQL_SQL="$sql" mysql sh -c "$(mysql_query_sh)"
-    return
-  fi
-  parse_database_url || die "No bundled mysql service and DATABASE_URL is missing; cannot rewrite sales_channel_domain."
-  if [[ "$DB_HOST" == "mysql" ]]; then
-    die "DATABASE_URL host is 'mysql' but the compose mysql service is not running here."
-  fi
-  local img
-  img="$(client_image_for_url)"
-  if [[ "$DRY_RUN" -eq 1 ]]; then
-    log "DRY-RUN docker run ${img} mysql -e <rewrite SQL>"
-    return
-  fi
-  docker run --rm --network host --entrypoint sh \
-    -e MYSQL_PWD="$DB_PASS" \
-    -e DUMP_HOST="$DB_HOST" \
-    -e DUMP_PORT="$DB_PORT" \
-    -e DUMP_USER="$DB_USER" \
-    -e DUMP_DB="$DB_NAME" \
-    -e SYNC_MYSQL_SQL="$sql" \
-    "$img" \
-    -c 'set -eu
-      if command -v mariadb >/dev/null; then C=mariadb; else C=mysql; fi
-      "$C" -h"$DUMP_HOST" -P"$DUMP_PORT" -u"$DUMP_USER" --batch -N -e "$SYNC_MYSQL_SQL" "$DUMP_DB"'
-}
-
 maybe_rewrite_sales_channel_domains() {
   if ! sync_rewrite_requested; then
     return
@@ -1331,44 +1270,20 @@ maybe_rewrite_sales_channel_domains() {
     log "SYNC_REWRITE_APP_URL / SYNC_REWRITE_URL_MAP set but db was skipped — not rewriting sales_channel_domain"
     return
   fi
-  sync_rewrite_validate_opts || die "Invalid SYNC_REWRITE_APP_URL / SYNC_REWRITE_URL_MAP"
-  log "Opt-in sales_channel_domain rewrite (sales channel domains only; media CDN / plugin configs / payment webhooks are not updated)"
-  if [[ -n "${SYNC_REWRITE_APP_URL:-}" ]]; then
-    log "SYNC_REWRITE_APP_URL=$(sync_rewrite_strip_trailing_slash "$SYNC_REWRITE_APP_URL") (origin replace, path kept)"
-  fi
-  if [[ -n "${SYNC_REWRITE_URL_MAP:-}" ]]; then
-    log "SYNC_REWRITE_URL_MAP=${SYNC_REWRITE_URL_MAP}"
-  fi
+  log "Opt-in sales_channel_domain rewrite via fyrst:sales-channel:rewrite-urls (sales channel domains only; media CDN / plugin configs / payment webhooks are not updated)"
+  local -a rewrite_cmd=(
+    "${COMPOSE[@]}"
+    run --rm --pull never --entrypoint php
+    web bin/console fyrst:sales-channel:rewrite-urls
+  )
+  sync_rewrite_append_console_args rewrite_cmd "$(basename "$COMPOSE_DIR")"
   if [[ "$DRY_RUN" -eq 1 ]]; then
-    log "DRY-RUN would SELECT url FROM sales_channel_domain and UPDATE matching rows"
-    log "DRY-RUN example: https://live.example.com/en → $(sync_rewrite_apply_url "https://live.example.com/en")"
+    log "DRY-RUN ${rewrite_cmd[*]}"
     return
   fi
-  local urls plan rc sql line old new
-  urls="$(mysql_exec_sql "SELECT url FROM sales_channel_domain ORDER BY url")" || die "Could not read sales_channel_domain.url"
-  set +e
-  plan="$(printf '%s\n' "$urls" | sync_rewrite_plan_from_urls)"
-  rc=$?
-  set -e
-  if [[ "$rc" -eq 2 ]]; then
-    die "sales_channel_domain rewrite aborted (unique url collision). Use SYNC_REWRITE_URL_MAP for a 1:1 prefix map."
+  if ! "${rewrite_cmd[@]}"; then
+    die "fyrst:sales-channel:rewrite-urls failed. composer update fyrst/shopware-cd so the command and FyrstShopwareCdBundle exist, then composer recipes:update fyrst/shopware-cd."
   fi
-  if [[ "$rc" -ne 0 ]]; then
-    die "sales_channel_domain rewrite plan failed"
-  fi
-  if [[ -z "$plan" ]]; then
-    log "No sales_channel_domain.url rows needed rewriting"
-    return
-  fi
-  sql="START TRANSACTION;"
-  while IFS=$'\t' read -r old new; do
-    [[ -z "$old" ]] && continue
-    log "sales_channel_domain ${old} → ${new}"
-    sql+=$'\n'"$(sync_rewrite_update_sql "$old" "$new")"
-  done <<<"$plan"
-  sql+=$'\nCOMMIT;'
-  mysql_exec_sql "$sql" >/dev/null || die "sales_channel_domain UPDATE failed"
-  log "sales_channel_domain rewrite finished. Payment/shipping webhooks and plugin URL configs may still need manual review."
 }
 
 post_restore_hints() {

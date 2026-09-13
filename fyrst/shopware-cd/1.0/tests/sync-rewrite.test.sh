@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Acceptance checks for opt-in sales_channel_domain rewrite (#17).
+# Acceptance checks for opt-in sales_channel_domain rewrite.
+# Bash keeps requested? + live refuse; rewrite is fyrst:sales-channel:rewrite-urls.
 # No Docker required. Run from anywhere:
 #   bash fyrst/shopware-cd/1.0/tests/sync-rewrite.test.sh
 
@@ -29,86 +30,117 @@ if command -v shellcheck >/dev/null 2>&1; then
   fi
 fi
 
-echo "==> default-off (#17)"
+echo "==> default-off"
 unset SYNC_REWRITE_APP_URL SYNC_REWRITE_URL_MAP || true
 if sync_rewrite_requested; then
   fail "rewrite must be off when env is unset"
 else
   pass "sync_rewrite_requested is false by default"
 fi
-
-echo "==> origin replace keeps path"
 SYNC_REWRITE_APP_URL="https://staging.example.com"
-unset SYNC_REWRITE_URL_MAP || true
-sync_rewrite_validate_opts
-got="$(sync_rewrite_apply_url "https://shop.example.com/en")"
-if [[ "$got" == "https://staging.example.com/en" ]]; then
-  pass "https://shop.example.com/en → staging /en"
+if sync_rewrite_requested; then
+  pass "sync_rewrite_requested is true when SYNC_REWRITE_APP_URL is set"
 else
-  fail "origin replace got $got"
+  fail "SYNC_REWRITE_APP_URL should opt in"
 fi
-got="$(sync_rewrite_apply_url "https://shop.example.com")"
-if [[ "$got" == "https://staging.example.com" ]]; then
-  pass "https://shop.example.com → staging origin"
-else
-  fail "bare origin got $got"
-fi
-got="$(sync_rewrite_apply_url "http://shop.example.com:8080/de/")"
-if [[ "$got" == "https://staging.example.com/de/" ]]; then
-  pass "scheme+port replaced; path kept"
-else
-  fail "port replace got $got"
-fi
-
-echo "==> URL map longest prefix"
 unset SYNC_REWRITE_APP_URL || true
-SYNC_REWRITE_URL_MAP="https://shop.example.com=https://staging.example.com,https://shop.example.com/en=https://en.staging.example.com,https://b2b.example.com=https://b2b.staging.example.com"
-sync_rewrite_validate_opts
-got="$(sync_rewrite_apply_url "https://shop.example.com/en/about")"
-if [[ "$got" == "https://en.staging.example.com/about" ]]; then
-  pass "longest prefix map wins"
+SYNC_REWRITE_URL_MAP="https://shop.example.com=https://staging.example.com"
+if sync_rewrite_requested; then
+  pass "sync_rewrite_requested is true when SYNC_REWRITE_URL_MAP is set"
 else
-  fail "map prefix got $got"
+  fail "SYNC_REWRITE_URL_MAP should opt in"
 fi
-got="$(sync_rewrite_apply_url "https://other.example.com")"
-if [[ "$got" == "https://other.example.com" ]]; then
-  pass "unmapped URL left unchanged when only MAP is set"
-else
-  fail "unmapped got $got"
-fi
+unset SYNC_REWRITE_URL_MAP || true
 
-echo "==> plan + SQL + collision"
+echo "==> console flag construction (DRY_RUN=1 only)"
 SYNC_REWRITE_APP_URL="https://staging.example.com"
 unset SYNC_REWRITE_URL_MAP || true
-sync_rewrite_validate_opts
-plan="$(printf '%s\n' "https://live.example.com" "https://live.example.com/en" | sync_rewrite_plan_from_urls)"
-if printf '%s\n' "$plan" | grep -qx $'https://live.example.com\thttps://staging.example.com' \
-  && printf '%s\n' "$plan" | grep -qx $'https://live.example.com/en\thttps://staging.example.com/en'; then
-  pass "plan rewrites both live domains to staging"
+SHOPWARE_DEPLOY_ENV=staging
+SYNC_ENV=staging
+DRY_RUN=0
+args=()
+sync_rewrite_append_console_args args "acme-staging"
+joined="${args[*]}"
+if [[ "$joined" == *"--dry-run"* ]]; then
+  fail "DRY_RUN=0 must not pass --dry-run (got: $joined)"
 else
-  fail "plan was: $plan"
+  pass "DRY_RUN=0 omits --dry-run"
 fi
-sql="$(sync_rewrite_update_sql "https://live.example.com/en" "https://staging.example.com/en")"
-if printf '%s' "$sql" | grep -q "UPDATE sales_channel_domain" \
-  && printf '%s' "$sql" | grep -q "https://staging.example.com/en" \
-  && printf '%s' "$sql" | grep -q "WHERE url = 'https://live.example.com/en'"; then
-  pass "SQL updates sales_channel_domain.url only"
+if [[ "$joined" == *"--app-url=https://staging.example.com"* ]] \
+  && [[ "$joined" == *"--deploy-env=staging"* ]] \
+  && [[ "$joined" == *"--sync-env=staging"* ]] \
+  && [[ "$joined" == *"--checkout-basename=acme-staging"* ]]; then
+  pass "passes --app-url / --deploy-env / --sync-env / --checkout-basename"
 else
-  fail "SQL was: $sql"
+  fail "missing required flags: $joined"
 fi
-if ! printf '%s' "$sql" | grep -qiE 'system_config|media|plugin'; then
-  pass "SQL does not touch system_config / media / plugin tables"
+if [[ "$joined" == *"--map="* ]]; then
+  fail "must not pass --map when SYNC_REWRITE_URL_MAP is unset (got: $joined)"
 else
-  fail "SQL escaped the sales_channel_domain-only rule"
+  pass "omits --map when SYNC_REWRITE_URL_MAP is unset"
 fi
-set +e
-coll_err="$(printf '%s\n' "https://a.example.com/x" "https://b.example.com/x" | sync_rewrite_plan_from_urls 2>&1)"
-coll_rc=$?
-set -e
-if [[ "$coll_rc" -eq 2 ]] && printf '%s' "$coll_err" | grep -qi collision; then
-  pass "collision on unique url is refused"
+
+DRY_RUN=1
+args=()
+sync_rewrite_append_console_args args "acme-staging"
+if [[ "${args[*]}" == *"--dry-run"* ]]; then
+  pass "DRY_RUN=1 adds --dry-run"
 else
-  fail "collision rc=$coll_rc err=$coll_err"
+  fail "DRY_RUN=1 should add --dry-run: ${args[*]}"
+fi
+
+unset SYNC_REWRITE_APP_URL || true
+SYNC_REWRITE_URL_MAP="https://shop.example.com=https://staging.example.com"
+DRY_RUN=0
+args=()
+sync_rewrite_append_console_args args "acme-staging"
+joined="${args[*]}"
+if [[ "$joined" == *"--map=https://shop.example.com=https://staging.example.com"* ]] \
+  && [[ "$joined" != *"--app-url="* ]]; then
+  pass "passes --map only when MAP is set"
+else
+  fail "map-only flags: $joined"
+fi
+unset SYNC_REWRITE_URL_MAP || true
+
+echo "==> no bash SQL planner"
+if grep -q 'UPDATE sales_channel_domain' "$DEPLOY/lib/sync-rewrite.sh" \
+  || grep -q 'sync_rewrite_update_sql' "$DEPLOY/lib/sync-rewrite.sh" \
+  || grep -q 'sync_rewrite_plan_from_urls' "$DEPLOY/lib/sync-rewrite.sh"; then
+  fail "sync-rewrite.sh still has SQL planner/update helpers"
+else
+  pass "sync-rewrite.sh has no SQL planner/update helpers"
+fi
+if grep -q 'UPDATE sales_channel_domain' "$DEPLOY/sync-runtime.sh" \
+  || grep -q 'mysql_exec_sql' "$DEPLOY/sync-runtime.sh" \
+  || grep -q 'SELECT url FROM sales_channel_domain' "$DEPLOY/sync-runtime.sh"; then
+  fail "sync-runtime.sh still has bash SQL updates to sales_channel_domain"
+else
+  pass "sync-runtime.sh does not UPDATE sales_channel_domain via SQL"
+fi
+if grep -q 'fyrst:sales-channel:rewrite-urls' "$DEPLOY/sync-runtime.sh" \
+  && grep -q 'run --rm --pull never --entrypoint php' "$DEPLOY/sync-runtime.sh"; then
+  pass "sync-runtime.sh calls fyrst:sales-channel:rewrite-urls via compose run"
+else
+  fail "sync-runtime.sh missing compose run of fyrst:sales-channel:rewrite-urls"
+fi
+
+echo "==> Flex bundle in manifest.json"
+if python3 - "$ROOT/manifest.json" <<'PY'
+import json, sys
+m = json.load(open(sys.argv[1]))
+bundles = m.get("bundles") or {}
+ok = (
+    "copy-from-recipe" in m
+    and "env" in m
+    and bundles.get("Fyrst\\ShopwareCd\\FyrstShopwareCdBundle") == ["all"]
+)
+raise SystemExit(0 if ok else 1)
+PY
+then
+  pass "manifest.json registers FyrstShopwareCdBundle for all envs"
+else
+  fail "manifest.json missing Flex bundles entry for FyrstShopwareCdBundle"
 fi
 
 echo "==> live refuse helper (SYNC_ALLOW_LIVE_RESTORE does not matter)"
@@ -187,16 +219,25 @@ fi
 echo "==> docs"
 if grep -q 'SYNC_REWRITE_APP_URL' "$DEPLOY/sync-runtime.md" \
   && grep -qi 'payment/shipping webhook' "$DEPLOY/sync-runtime.md" \
-  && grep -q 'not rewritten unless you opt in' "$DEPLOY/sync-runtime.md"; then
-  pass "sync-runtime.md documents opt-in rewrite + webhook review"
+  && grep -q 'not rewritten unless you opt in' "$DEPLOY/sync-runtime.md" \
+  && grep -q 'fyrst:sales-channel:rewrite-urls' "$DEPLOY/sync-runtime.md" \
+  && grep -q 'composer update fyrst/shopware-cd' "$DEPLOY/sync-runtime.md"; then
+  pass "sync-runtime.md documents opt-in rewrite via console + webhook review"
 else
   fail "sync-runtime.md missing rewrite docs"
 fi
 if grep -q 'SYNC_REWRITE_APP_URL' "$DEPLOY/sync.env.example" \
-  && grep -q 'SYNC_REWRITE_URL_MAP' "$DEPLOY/sync.env.example"; then
-  pass "sync.env.example has rewrite env"
+  && grep -q 'SYNC_REWRITE_URL_MAP' "$DEPLOY/sync.env.example" \
+  && grep -q 'fyrst:sales-channel:rewrite-urls' "$DEPLOY/sync.env.example"; then
+  pass "sync.env.example has rewrite env + console command"
 else
   fail "sync.env.example missing rewrite env"
+fi
+if grep -q 'FyrstShopwareCdBundle' "$ROOT/post-install.txt" \
+  && grep -q 'fyrst:sales-channel:rewrite-urls' "$DEPLOY/README.md"; then
+  pass "post-install + deploy README mention bundle / console"
+else
+  fail "post-install or deploy README missing operator rewrite notes"
 fi
 
 if [[ "$FAILS" -ne 0 ]]; then

@@ -263,7 +263,7 @@ bash deploy/sync-runtime.sh sync --from live --data all --dry-run
 
 Restore/sync refuse `SYNC_ENV=live` and `SHOPWARE_DEPLOY_ENV=live` (and a checkout directory named `live`).
 
-Opt-in sales-channel domain rewrite after a DB restore: set `SYNC_REWRITE_APP_URL=https://staging.example.com` (or `SYNC_REWRITE_URL_MAP`) on the consumer. Default is off. Rewrite is **impossible on live**. Payment/shipping webhooks still need a manual review. See **[sync-runtime.md](sync-runtime.md)**.
+Opt-in sales-channel domain rewrite after a DB restore: set `SYNC_REWRITE_APP_URL=https://staging.example.com` (or `SYNC_REWRITE_URL_MAP`) on the consumer. Default is off. Sync then runs `bin/console fyrst:sales-channel:rewrite-urls` (shops need `composer update fyrst/shopware-cd`). Rewrite is **impossible on live**. Payment/shipping webhooks still need a manual review. See **[sync-runtime.md](sync-runtime.md)**.
 
 ## Local project dev pull (live → laptop)
 

@@ -147,8 +147,15 @@ Overlapping runs are blocked with `flock` on `var/runtime-sync.lock`.
   # SYNC_REWRITE_URL_MAP=https://shop.example.com=https://staging.example.com,https://b2b.example.com=https://b2b.staging.example.com
   ```
 
-  After the DB restore the script runs controlled `UPDATE sales_channel_domain` SQL (Shopware 6.x storefront matching uses that column). It does **not** half-update media CDN, plugin `system_config`, or payment/shipping webhook URLs — those still need **manual review**. Optional: `SYNC_POST_RESTORE_CMD` for a shop-specific extra hook (non-fatal).
-- Without the rewrite env, set `SYNC_APP_URL` (or rely on `APP_URL` in `.env`) so the log prints the destination URL if you rewrite in admin/SQL yourself.
+  After the DB restore, sync calls `bin/console fyrst:sales-channel:rewrite-urls` via compose `web` (same `run --rm --pull never --entrypoint php` style as `cache:clear`). Shops need a current `fyrst/shopware-cd` so that command and `FyrstShopwareCdBundle` exist:
+
+  ```bash
+  composer update fyrst/shopware-cd
+  composer recipes:update fyrst/shopware-cd
+  ```
+
+  (`recipes:update` writes `Fyrst\ShopwareCd\FyrstShopwareCdBundle` into `config/bundles.php`.) The command updates `sales_channel_domain.url` only. It does **not** half-update media CDN, plugin `system_config`, or payment/shipping webhook URLs — those still need **manual review**. Optional: `SYNC_POST_RESTORE_CMD` for a shop-specific extra hook (non-fatal).
+- Without the rewrite env, set `SYNC_APP_URL` (or rely on `APP_URL` in `.env`) so the log prints the destination URL if you rewrite in admin yourself.
 
 ## Safety
 
