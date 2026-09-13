@@ -241,6 +241,8 @@ Typical for deploy: `SSH_PRIVATE_KEY`, `VPS_HOST`, `VPS_USER`, `VPS_PATH`, `SSH_
 
 **Sync is not a backup.** `deploy/sync-runtime.sh` pulls **database + bind-mounted upload trees** from another VPS onto this one (usually live → staging). It refuses `SHOPWARE_DEPLOY_ENV=live` as a consumer. Off-host backups with retention are **[backup-runtime.md](backup-runtime.md)** (`deploy/backup-runtime.sh`, cron on live).
 
+DB snapshots use **`shopware-cli project dump`** in a one-shot container (`ghcr.io/shopware/shopware-cli:0.18.4` on the Compose network; `web` does not ship the CLI). Restore is still the MySQL/MariaDB client. See **[sync-runtime.md](sync-runtime.md)** for `--clean` / `--anonymize` defaults and `SYNC_DUMP_ENGINE=mysqldump`.
+
 When `SHOPWARE_DATA_ROOT` / `SYNC_DATA_ROOT` are unset, `deploy/sync-runtime.sh` derives
 
 `$SHOPWARE_DATA_BASE/$SHOPWARE_SHOP_ID/$SHOPWARE_DEPLOY_ENV`

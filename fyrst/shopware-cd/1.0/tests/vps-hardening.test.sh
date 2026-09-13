@@ -33,6 +33,7 @@ echo "==> bash -n"
 for s in \
   "$DEPLOY/lib/vps-common.sh" \
   "$DEPLOY/lib/sync-rewrite.sh" \
+  "$DEPLOY/lib/sync-dump.sh" \
   "$DEPLOY/vps-release.sh" \
   "$DEPLOY/vps-rollback.sh" \
   "$DEPLOY/backup-runtime.sh" \
@@ -49,7 +50,7 @@ done
 
 if command -v shellcheck >/dev/null 2>&1; then
   echo "==> shellcheck"
-  if shellcheck -x "$DEPLOY/vps-release.sh" "$DEPLOY/vps-rollback.sh" "$DEPLOY/backup-runtime.sh" "$DEPLOY/lib/vps-common.sh" "$DEPLOY/lib/sync-rewrite.sh" "$DEPLOY/init-env.sh"; then
+  if shellcheck -x "$DEPLOY/vps-release.sh" "$DEPLOY/vps-rollback.sh" "$DEPLOY/backup-runtime.sh" "$DEPLOY/lib/vps-common.sh" "$DEPLOY/lib/sync-rewrite.sh" "$DEPLOY/lib/sync-dump.sh" "$DEPLOY/init-env.sh"; then
     pass "shellcheck release/rollback/backup/lib/init-env"
   else
     fail "shellcheck"

@@ -12,7 +12,7 @@ Same trees as sync `--data all`:
 
 | Item | Mechanism |
 | --- | --- |
-| `db` | Logical SQL dump from compose `mysql` (or `DATABASE_URL`) via `deploy/sync-runtime.sh snapshot` |
+| `db` | Logical SQL dump via `shopware-cli project dump` (same as sync: pinned `ghcr.io/shopware/shopware-cli:0.18.4` one-shot on the Compose network, or `DATABASE_URL`). Restore is still MySQL/MariaDB client import. |
 | `media` `files` `thumbnail` `theme` `sitemap` | Bind-mount trees under `$SHOPWARE_DATA_BASE/$SHOPWARE_SHOP_ID/$SHOPWARE_DEPLOY_ENV` |
 
 Layout on `BACKUP_TARGET`:
@@ -33,7 +33,7 @@ On the **live** VPS (unlike sync, which you configure on staging):
 1. Copy `deploy/backup.env.example` → `deploy/backup.env` and `chmod 600 deploy/backup.env`.
 2. Set `BACKUP_TARGET` to a **second disk** or an **SSH host** (not only a directory on the same root filesystem as `/var/lib/shopware`). Same-disk copies are better than nothing but do not survive disk loss.
 3. `SHOPWARE_SHOP_ID` + `SHOPWARE_DEPLOY_ENV=live` in shop-root `.env` (same as Compose).
-4. Shop-root `.env` still needs `IMAGE` (snapshot uses compose exec).
+4. Shop-root `.env` still needs `IMAGE` (snapshot interpolates compose). First dump also needs to **pull** `ghcr.io/shopware/shopware-cli:0.18.4` (or `SYNC_SHOPWARE_CLI_IMAGE`). Dump flags (`SYNC_DUMP_CLEAN`, `SYNC_DUMP_ANONYMIZE`, …) are read from the environment / `deploy/sync.env` / this file.
 
 Do not commit `deploy/backup.env`.
 
