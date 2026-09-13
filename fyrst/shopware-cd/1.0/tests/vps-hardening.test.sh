@@ -31,9 +31,7 @@ assert_exec() {
 
 echo "==> bash -n"
 for s in \
-  "$DEPLOY/lib/vps-common.sh" \
-  "$DEPLOY/lib/sync-rewrite.sh" \
-  "$DEPLOY/lib/sync-dump.sh" \
+  "$DEPLOY"/lib/*.sh \
   "$DEPLOY/vps-release.sh" \
   "$DEPLOY/vps-rollback.sh" \
   "$DEPLOY/backup-runtime.sh" \
@@ -50,7 +48,7 @@ done
 
 if command -v shellcheck >/dev/null 2>&1; then
   echo "==> shellcheck"
-  if shellcheck -x "$DEPLOY/vps-release.sh" "$DEPLOY/vps-rollback.sh" "$DEPLOY/backup-runtime.sh" "$DEPLOY/lib/vps-common.sh" "$DEPLOY/lib/sync-rewrite.sh" "$DEPLOY/lib/sync-dump.sh" "$DEPLOY/init-env.sh"; then
+  if shellcheck -x "$DEPLOY/vps-release.sh" "$DEPLOY/vps-rollback.sh" "$DEPLOY/backup-runtime.sh" "$DEPLOY/init-env.sh" "$DEPLOY"/lib/*.sh; then
     pass "shellcheck release/rollback/backup/lib/init-env"
   else
     fail "shellcheck"
@@ -448,8 +446,9 @@ else
   pass "no compose run --no-build in deploy scripts"
 fi
 if grep -q -- 'run --rm --pull never' "$DEPLOY/lib/vps-common.sh" \
-  && grep -q -- 'run --rm --pull never' "$DEPLOY/sync-runtime.sh"; then
-  pass "vps-common + sync-runtime use run --pull never"
+  && grep -q -- 'run --rm --pull never' "$DEPLOY/lib/sync-rewrite.sh" \
+  && grep -q -- 'run --rm --pull never' "$DEPLOY/lib/sync-app.sh"; then
+  pass "vps-common + sync rewrite/app use run --pull never"
 else
   fail "setup/sync run is not --pull never"
 fi

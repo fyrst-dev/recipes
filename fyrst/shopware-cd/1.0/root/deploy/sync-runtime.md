@@ -8,6 +8,8 @@ For a **local** `shopware-cli project dev` tree (path remap into `./public/media
 
 This is **not** part of image CD. `deploy/vps-release.sh` is unchanged (pull image, setup helper, recreate `web`). Runtime files stay out of git and out of the Shopware app image (`/.dockerignore` already excludes `/deploy` and `/var`).
 
+Operators still run **`deploy/sync-runtime.sh`** (same commands, flags, and `deploy/sync.env` vars). Implementation is sourced from `deploy/lib/` — do not put those files on cron.
+
 Object storage (S3 and similar) is **out of scope** for this VPS path. Transfer is SSH + **`shopware-cli project dump`** (gzip SQL) + **rsync of bind-mount directories** under `SHOPWARE_DATA_ROOT`. Named-volume docker-tar is only a fallback if those directories are missing. Restore still uses the MySQL/MariaDB client (shopware-cli does not replace import).
 
 After recipe updates: `composer recipes:update fyrst/shopware-cd`, then `bash deploy/init-env.sh` (or merge new `.env.example` keys (`SHOPWARE_SHOP_ID`, `SHOPWARE_DEPLOY_ENV`, optional `SHOPWARE_DATA_BASE`) into each environment's `.env` by hand). `COMPOSE_PROJECT_NAME` / `SHOPWARE_DATA_ROOT` are optional script overrides — Compose does not require them.

@@ -14,17 +14,14 @@ vps_err() { printf 'ERROR: %s\n' "$*" >&2; }
 vps_warn() { printf 'WARNING: %s\n' "$*" >&2; }
 vps_die() { vps_err "$@"; exit 1; }
 
-VPS_COMPOSE_FILES=(
-  deploy/compose.yaml
-  deploy/compose.prod.yaml
-  deploy/compose.vps.yaml
-)
+_VPS_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=identity.sh
+source "${_VPS_LIB_DIR}/identity.sh"
+# shellcheck source=compose.sh
+source "${_VPS_LIB_DIR}/compose.sh"
 
-DEFAULT_DATA_BASE="/var/lib/shopware/data"
 VPS_DRY_RUN="${VPS_DRY_RUN:-0}"
 PROFILE_ARGS=()
-COMPOSE=()
-COMPOSE_STR=""
 
 vps_cd_shop_root() {
   COMPOSE_DIR="${COMPOSE_DIR:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
@@ -32,13 +29,7 @@ vps_cd_shop_root() {
 }
 
 vps_load_env_file() {
-  local f=$1
-  if [[ -f "$f" ]]; then
-    set -a
-    # shellcheck disable=SC1090
-    source "$f"
-    set +a
-  fi
+  load_env_file "$1"
 }
 
 vps_load_shop_env() {
@@ -88,7 +79,8 @@ vps_require_sot() {
 
 vps_derive_identity() {
   SHOPWARE_DATA_BASE="${SHOPWARE_DATA_BASE:-$DEFAULT_DATA_BASE}"
-  local derived_project="${SHOPWARE_SHOP_ID}-${SHOPWARE_DEPLOY_ENV}"
+  local derived_project
+  derived_project="$(identity_derived_project_name "$SHOPWARE_SHOP_ID" "$SHOPWARE_DEPLOY_ENV")"
   if [[ -z "${COMPOSE_PROJECT_NAME:-}" ]]; then
     COMPOSE_PROJECT_NAME="$derived_project"
     vps_log "COMPOSE_PROJECT_NAME unset; derived ${COMPOSE_PROJECT_NAME}"
@@ -99,7 +91,7 @@ vps_derive_identity() {
     vps_warn "This script does not delete it (create owns the local flow)."
   fi
   if [[ -z "${SHOPWARE_DATA_ROOT:-}" ]]; then
-    SHOPWARE_DATA_ROOT="${SHOPWARE_DATA_BASE}/${SHOPWARE_SHOP_ID}/${SHOPWARE_DEPLOY_ENV}"
+    SHOPWARE_DATA_ROOT="$(identity_derived_data_root "$SHOPWARE_SHOP_ID" "$SHOPWARE_DEPLOY_ENV")"
     vps_log "SHOPWARE_DATA_ROOT unset; derived ${SHOPWARE_DATA_ROOT}"
   fi
   export IMAGE IMAGE_TAG COMPOSE_PROJECT_NAME SHOPWARE_DATA_ROOT SHOPWARE_SHOP_ID SHOPWARE_DEPLOY_ENV SHOPWARE_DATA_BASE
@@ -129,20 +121,7 @@ vps_skip_pull() {
 }
 
 vps_init_compose() {
-  local f
-  for f in "${VPS_COMPOSE_FILES[@]}"; do
-    if [[ ! -f "$f" ]]; then
-      vps_die "Missing ${f} (expected under shop root COMPOSE_DIR=${COMPOSE_DIR})"
-    fi
-  done
-  COMPOSE=(
-    docker compose
-    --env-file .env
-    -f deploy/compose.yaml
-    -f deploy/compose.prod.yaml
-    -f deploy/compose.vps.yaml
-  )
-  COMPOSE_STR="docker compose --env-file .env -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/compose.vps.yaml"
+  compose_init
 }
 
 vps_parse_profiles() {
