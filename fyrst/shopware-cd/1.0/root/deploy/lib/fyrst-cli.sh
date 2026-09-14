@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Shared locator for the deploy/*.sh wrappers.
+# Shared locator for deploy/lib/dispatch.sh (sourced by the six filename stubs).
 # Implementation lives in fyrst-cli 0.1.0+ (https://github.com/fyrst-dev/cli).
 # Dump stays shopware-cli; this helper never dumps.
 #
@@ -49,7 +49,7 @@ fyrst_cli_shop_root() {
     return
   fi
   if [[ -z "${SCRIPT_DIR:-}" ]]; then
-    fyrst_cli_die "SCRIPT_DIR is unset (wrapper must set it before sourcing lib/fyrst-cli.sh)"
+    fyrst_cli_die "SCRIPT_DIR is unset (stub must set it before sourcing lib/dispatch.sh)"
   fi
   (cd "${SCRIPT_DIR}/.." && pwd)
 }
@@ -66,43 +66,4 @@ fyrst_cli_exec() {
   export COMPOSE_DIR="$shop"
   cd "$shop" || fyrst_cli_die "Cannot cd to COMPOSE_DIR=${shop}"
   exec "$bin" "$@"
-}
-
-# Overlay sync-runtime-local.sh treated --data all as volumes-only.
-# fyrst-cli shopware sync local refuses --data all (all includes db on
-# sync pull / backup create). Drop --data all so the CLI default applies.
-fyrst_cli_rewrite_sync_local_args() {
-  local -a out=()
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      --data)
-        if [[ "${2:-}" == "all" ]]; then
-          shift 2
-        else
-          out+=("$1" "${2:-}")
-          shift 2
-        fi
-        ;;
-      --data=all)
-        shift
-        ;;
-      --data=*)
-        if [[ "${1#--data=}" == "all" ]]; then
-          shift
-        else
-          out+=("$1")
-          shift
-        fi
-        ;;
-      *)
-        out+=("$1")
-        shift
-        ;;
-    esac
-  done
-  if [[ ${#out[@]} -gt 0 ]]; then
-    fyrst_cli_exec shopware sync local "${out[@]}"
-  else
-    fyrst_cli_exec shopware sync local
-  fi
 }

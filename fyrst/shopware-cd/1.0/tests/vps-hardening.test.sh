@@ -37,6 +37,7 @@ fi
 echo "==> bash -n"
 for s in \
   "$DEPLOY/lib/fyrst-cli.sh" \
+  "$DEPLOY/lib/dispatch.sh" \
   "$DEPLOY/vps-release.sh" \
   "$DEPLOY/vps-rollback.sh" \
   "$DEPLOY/backup-runtime.sh" \
@@ -56,7 +57,7 @@ if command -v shellcheck >/dev/null 2>&1; then
   if shellcheck -x "$DEPLOY/vps-release.sh" "$DEPLOY/vps-rollback.sh" \
     "$DEPLOY/backup-runtime.sh" "$DEPLOY/init-env.sh" \
     "$DEPLOY/sync-runtime.sh" "$DEPLOY/sync-runtime-local.sh" \
-    "$DEPLOY/lib/fyrst-cli.sh"; then
+    "$DEPLOY/lib/fyrst-cli.sh" "$DEPLOY/lib/dispatch.sh"; then
     pass "shellcheck wrappers + helper"
   else
     fail "shellcheck"
@@ -76,6 +77,7 @@ assert_file "$DEPLOY/backup.env.example"
 assert_file "$DEPLOY/edge/Caddyfile"
 assert_file "$DEPLOY/edge/README.md"
 assert_file "$DEPLOY/lib/fyrst-cli.sh"
+assert_file "$DEPLOY/lib/dispatch.sh"
 assert_exec "$DEPLOY/init-env.sh"
 
 echo "==> healthcheck path (#14)"
@@ -152,7 +154,7 @@ SHOP="$TMP/acme-live"
 mkdir -p "$SHOP/deploy"
 cp "$DEPLOY/compose.yaml" "$DEPLOY/compose.prod.yaml" "$DEPLOY/compose.vps.yaml" "$SHOP/deploy/"
 mkdir -p "$SHOP/deploy/lib"
-cp "$DEPLOY/lib/fyrst-cli.sh" "$SHOP/deploy/lib/"
+cp "$DEPLOY/lib/"*.sh "$SHOP/deploy/lib/"
 cp "$DEPLOY/vps-release.sh" "$DEPLOY/vps-rollback.sh" "$DEPLOY/backup-runtime.sh" "$DEPLOY/sync-runtime.sh" "$SHOP/deploy/"
 chmod +x "$SHOP/deploy/"*.sh
 cat >"$SHOP/.env" <<'EOF'

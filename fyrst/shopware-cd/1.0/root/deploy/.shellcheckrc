@@ -1,3 +1,3 @@
 source-path=SCRIPTDIR
-# Wrappers assign SCRIPT_DIR then source lib/fyrst-cli.sh.
+# Stubs assign SCRIPT_DIR then source lib/dispatch.sh.
 disable=SC1091

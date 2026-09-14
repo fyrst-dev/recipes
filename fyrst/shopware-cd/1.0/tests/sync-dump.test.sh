@@ -68,7 +68,7 @@ if command -v fyrst-cli >/dev/null 2>&1; then
   SHOP="$TMP/acme-staging"
   mkdir -p "$SHOP/deploy/lib"
   cp "$DEPLOY/sync-runtime.sh" "$SHOP/deploy/"
-  cp "$DEPLOY/lib/fyrst-cli.sh" "$SHOP/deploy/lib/"
+  cp "$DEPLOY/lib/"*.sh "$SHOP/deploy/lib/"
   cp "$DEPLOY/compose.yaml" "$DEPLOY/compose.prod.yaml" "$DEPLOY/compose.vps.yaml" "$SHOP/deploy/"
   chmod +x "$SHOP/deploy/sync-runtime.sh"
   cat >"$SHOP/.env" <<'EOF'

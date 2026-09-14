@@ -28,7 +28,8 @@
     (<comment>IMAGE_TAG=$(cat .previous-tag) bash deploy/vps-rollback.sh</comment>).
     Each VPS needs <comment>fyrst-cli</comment> 0.1.0+
     (<comment>https://github.com/fyrst-dev/cli</comment>).
-    CI still runs <comment>bash ./deploy/vps-release.sh</comment>.
+    CI still runs <comment>bash ./deploy/vps-release.sh</comment>
+    (implementation is a dispatcher; operator filenames are unchanged).
     TLS edge: <comment>deploy/edge/Caddyfile</comment>.
     Live → local project dev rsync (no DB): <comment>deploy/sync-runtime-local.sh</comment>
     (reads <comment>SHOPWARE_SHOP_ID</comment> from local <comment>.env</comment>;
