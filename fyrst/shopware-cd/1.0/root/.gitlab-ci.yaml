@@ -29,8 +29,8 @@
 #   DOCKERFILE                default docker/Dockerfile (from shopware/docker)
 #
 # Compose / VPS (DEPLOY_TARGET empty or "compose"):
-#   CI still runs bash ./deploy/vps-release.sh (thin wrapper → fyrst-cli
-#   shopware deploy release). The VPS must have fyrst-cli 0.1.0+ on PATH:
+#   CI runs fyrst-cli shopware deploy release (IMAGE / IMAGE_TAG / COMPOSE_DIR).
+#   The VPS must have fyrst-cli 0.1.0+ on PATH:
 #     curl -fsSL https://raw.githubusercontent.com/fyrst-dev/cli/main/scripts/install.sh | bash
 #   Image build stays in this workflow. Dump stays shopware-cli (not fyrst-cli).
 #   Shop-root compose.yaml is owned by shopware-cli project create (local only).
@@ -223,7 +223,7 @@ deploy:
                     git fetch --quiet origin
                     git checkout --detach '${CI_COMMIT_SHA}'
                     export IMAGE='${IMAGE}' IMAGE_TAG='${IMAGE_TAG}' COMPOSE_DIR='${VPS_PATH}' SMOKE_URL='${SMOKE_URL:-}'
-                    bash ./deploy/vps-release.sh"
+                    fyrst-cli shopware deploy release"
         -   |
             if [ -n "${SMOKE_URL:-}" ]; then
                 apk add --no-cache curl

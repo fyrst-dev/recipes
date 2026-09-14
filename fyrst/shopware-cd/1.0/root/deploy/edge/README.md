@@ -70,6 +70,6 @@ widgets.example.com {
 ## Go-live checklist
 
 - [ ] Edge (this Caddyfile) is in front of Shopware **before** public DNS cutover
-- [ ] `compose.prod.yaml` is in the `docker compose -f` list (`vps-release.sh` already adds it)
+- [ ] `compose.prod.yaml` is in the `docker compose -f` list (`fyrst-cli shopware deploy release` already adds it)
 - [ ] MySQL has no published host port
-- [ ] Nightly `deploy/backup-runtime.sh` cron is on **live** (sync is not a backup)
+- [ ] Nightly `fyrst-cli shopware backup create` cron is on **live** (sync is not a backup)

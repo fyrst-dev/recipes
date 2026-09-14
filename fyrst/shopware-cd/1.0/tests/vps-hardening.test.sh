@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Acceptance checks for VPS production hardening + fyrst-cli wrappers.
-# Behavioral script checks need fyrst-cli 0.1.0+. No Docker required for most.
+# Acceptance checks for VPS production hardening + fyrst-cli lifecycle verbs.
+# Behavioral checks need fyrst-cli 0.1.0+. No Docker required for most.
 #   bash fyrst/shopware-cd/1.0/tests/vps-hardening.test.sh
 
 set -euo pipefail
@@ -20,65 +20,27 @@ assert_file() {
   fi
 }
 
-assert_exec() {
-  if [[ -x "$1" ]]; then
-    pass "executable $1"
-  else
-    fail "not executable $1"
-  fi
-}
-
 if ! command -v fyrst-cli >/dev/null 2>&1; then
-  printf 'FAIL fyrst-cli 0.1.0+ is required (wrappers exec it). Install:\n' >&2
+  printf 'FAIL fyrst-cli 0.1.0+ is required. Install:\n' >&2
   printf '  curl -fsSL https://raw.githubusercontent.com/fyrst-dev/cli/main/scripts/install.sh | bash\n' >&2
   exit 1
 fi
 
-echo "==> bash -n"
-for s in \
-  "$DEPLOY/lib/fyrst-cli.sh" \
-  "$DEPLOY/lib/dispatch.sh" \
-  "$DEPLOY/vps-release.sh" \
-  "$DEPLOY/vps-rollback.sh" \
-  "$DEPLOY/backup-runtime.sh" \
-  "$DEPLOY/sync-runtime.sh" \
-  "$DEPLOY/sync-runtime-local.sh" \
-  "$DEPLOY/init-env.sh"
-do
-  if bash -n "$s"; then
-    pass "bash -n $(basename "$s")"
-  else
-    fail "bash -n $(basename "$s")"
-  fi
-done
-
-if command -v shellcheck >/dev/null 2>&1; then
-  echo "==> shellcheck"
-  if shellcheck -x "$DEPLOY/vps-release.sh" "$DEPLOY/vps-rollback.sh" \
-    "$DEPLOY/backup-runtime.sh" "$DEPLOY/init-env.sh" \
-    "$DEPLOY/sync-runtime.sh" "$DEPLOY/sync-runtime-local.sh" \
-    "$DEPLOY/lib/fyrst-cli.sh" "$DEPLOY/lib/dispatch.sh"; then
-    pass "shellcheck wrappers + helper"
-  else
-    fail "shellcheck"
-  fi
-else
-  echo "==> shellcheck not installed (bash -n only)"
-fi
-
 echo "==> named files"
-assert_file "$DEPLOY/vps-rollback.sh"
-assert_exec "$DEPLOY/vps-rollback.sh"
-assert_exec "$DEPLOY/vps-release.sh"
-assert_file "$DEPLOY/backup-runtime.sh"
-assert_exec "$DEPLOY/backup-runtime.sh"
 assert_file "$DEPLOY/backup-runtime.md"
 assert_file "$DEPLOY/backup.env.example"
 assert_file "$DEPLOY/edge/Caddyfile"
 assert_file "$DEPLOY/edge/README.md"
-assert_file "$DEPLOY/lib/fyrst-cli.sh"
-assert_file "$DEPLOY/lib/dispatch.sh"
-assert_exec "$DEPLOY/init-env.sh"
+assert_file "$DEPLOY/compose.yaml"
+for s in init-env.sh vps-release.sh vps-rollback.sh sync-runtime.sh \
+  sync-runtime-local.sh backup-runtime.sh lib/fyrst-cli.sh lib/dispatch.sh
+do
+  if [[ -e "$DEPLOY/$s" ]]; then
+    fail "wrapper still present $s"
+  else
+    pass "removed $s"
+  fi
+done
 
 echo "==> healthcheck path (#14)"
 if grep -q "php -r 'exit(0);'" "$DEPLOY/compose.yaml"; then
@@ -121,10 +83,10 @@ fi
 
 echo "==> docs"
 for needle in \
-  'IMAGE_TAG=$(cat .previous-tag) bash deploy/vps-rollback.sh' \
+  'IMAGE_TAG=$(cat .previous-tag) fyrst-cli shopware deploy rollback' \
   'ROLLBACK_ON_SMOKE_FAIL' \
   'api/_info/health-check' \
-  'backup-runtime.sh' \
+  'fyrst-cli shopware backup' \
   'Sync is not a backup' \
   'deploy/edge/Caddyfile' \
   'fyrst-cli'
@@ -135,7 +97,8 @@ do
     fail "README missing ${needle}"
   fi
 done
-if grep -q 'vps-rollback.sh' "$ROOT/post-install.txt" && grep -q 'backup-runtime.sh' "$ROOT/post-install.txt" \
+if grep -q 'fyrst-cli shopware deploy rollback' "$ROOT/post-install.txt" \
+  && grep -q 'fyrst-cli shopware backup' "$ROOT/post-install.txt" \
   && grep -q 'fyrst-cli' "$ROOT/post-install.txt"; then
   pass "post-install pointers"
 else
@@ -147,16 +110,12 @@ else
   fail "sync-runtime.md missing sync ≠ backup"
 fi
 
-echo "==> fixture scripts (no docker; real fyrst-cli)"
+echo "==> fixture (no docker; real fyrst-cli)"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 SHOP="$TMP/acme-live"
 mkdir -p "$SHOP/deploy"
 cp "$DEPLOY/compose.yaml" "$DEPLOY/compose.prod.yaml" "$DEPLOY/compose.vps.yaml" "$SHOP/deploy/"
-mkdir -p "$SHOP/deploy/lib"
-cp "$DEPLOY/lib/"*.sh "$SHOP/deploy/lib/"
-cp "$DEPLOY/vps-release.sh" "$DEPLOY/vps-rollback.sh" "$DEPLOY/backup-runtime.sh" "$DEPLOY/sync-runtime.sh" "$SHOP/deploy/"
-chmod +x "$SHOP/deploy/"*.sh
 cat >"$SHOP/.env" <<'EOF'
 IMAGE=ghcr.io/example/acme
 IMAGE_TAG=tag-b
@@ -169,7 +128,7 @@ EOF
 : >"$SHOP/.env.prod"
 
 set +e
-out="$(cd "$SHOP" && bash deploy/vps-rollback.sh --dry-run 2>&1)"
+out="$(cd "$SHOP" && fyrst-cli shopware deploy rollback --dry-run 2>&1)"
 rc=$?
 set -e
 if [[ "$rc" -ne 0 ]] && printf '%s' "$out" | grep -q 'No .previous-tag'; then
@@ -180,7 +139,7 @@ fi
 
 printf '\n' >"$SHOP/.previous-tag"
 set +e
-out="$(cd "$SHOP" && bash deploy/vps-rollback.sh --dry-run 2>&1)"
+out="$(cd "$SHOP" && fyrst-cli shopware deploy rollback --dry-run 2>&1)"
 rc=$?
 set -e
 if [[ "$rc" -ne 0 ]] && printf '%s' "$out" | grep -qi 'empty'; then
@@ -191,7 +150,7 @@ fi
 
 printf 'tag-a\n' >"$SHOP/.previous-tag"
 set +e
-out="$(cd "$SHOP" && bash deploy/vps-rollback.sh --dry-run 2>&1)"
+out="$(cd "$SHOP" && fyrst-cli shopware deploy rollback --dry-run 2>&1)"
 rc=$?
 set -e
 if [[ "$rc" -eq 0 ]] && printf '%s' "$out" | grep -q 'tag-a' && printf '%s' "$out" | grep -q 'DRY-RUN' && printf '%s' "$out" | grep -q -- '--no-build'; then
@@ -213,7 +172,7 @@ fi
 echo "==> backup on live (#15)"
 mkdir -p "$TMP/backups"
 set +e
-out="$(cd "$SHOP" && BACKUP_TARGET="$TMP/backups" BACKUP_KEEP_DAYS=14 bash deploy/backup-runtime.sh backup --dry-run 2>&1)"
+out="$(cd "$SHOP" && BACKUP_TARGET="$TMP/backups" BACKUP_KEEP_DAYS=14 fyrst-cli shopware backup create --dry-run 2>&1)"
 rc=$?
 set -e
 if [[ "$rc" -eq 0 ]] && printf '%s' "$out" | grep -q 'live is allowed' && printf '%s' "$out" | grep -qv 'Refusing'; then
@@ -238,7 +197,7 @@ mkdir -p "$KEEP_DIR/20200101T020000Z" "$KEEP_DIR/20990101T020000Z"
 echo old >"$KEEP_DIR/20200101T020000Z/db.sql.gz"
 echo new >"$KEEP_DIR/20990101T020000Z/db.sql.gz"
 set +e
-out="$(cd "$SHOP" && BACKUP_TARGET="$TMP/backups" BACKUP_KEEP_DAYS=14 bash deploy/backup-runtime.sh prune 2>&1)"
+out="$(cd "$SHOP" && BACKUP_TARGET="$TMP/backups" BACKUP_KEEP_DAYS=14 fyrst-cli shopware backup prune 2>&1)"
 rc=$?
 set -e
 if [[ "$rc" -eq 0 && ! -d "$KEEP_DIR/20200101T020000Z" && -d "$KEEP_DIR/20990101T020000Z" ]]; then
@@ -250,7 +209,7 @@ fi
 echo "==> sync restore still refuses live without override"
 mkdir -p "$SHOP/var/runtime-sync"
 set +e
-out="$(cd "$SHOP" && bash deploy/sync-runtime.sh restore --dry-run --snapshot-dir "$SHOP/var/runtime-sync" 2>&1)"
+out="$(cd "$SHOP" && fyrst-cli shopware sync apply --dry-run --snapshot-dir "$SHOP/var/runtime-sync" 2>&1)"
 rc=$?
 set -e
 if [[ "$rc" -ne 0 ]] && printf '%s' "$out" | grep -q 'Refusing restore/sync on a live host'; then
@@ -374,14 +333,11 @@ else
   fail "post-install / README missing profiles"
 fi
 
-echo "==> wrappers do not pass compose run --no-build"
-if grep -RIn --include='*.sh' -- 'run --rm --no-build' "$DEPLOY" \
-  | grep -v ':[[:space:]]*#' \
-  || grep -RIn --include='*.sh' -- 'run --no-build' "$DEPLOY" \
-  | grep -v ':[[:space:]]*#'; then
-  fail "compose run still uses --no-build"
+echo "==> overlay ships no deploy shell scripts"
+if compgen -G "$DEPLOY/*.sh" >/dev/null || [[ -d "$DEPLOY/lib" ]]; then
+  fail "deploy still ships shell wrappers"
 else
-  pass "no compose run --no-build in deploy scripts"
+  pass "no deploy/*.sh or deploy/lib"
 fi
 
 echo "==> SKIP_PULL / PULL_POLICY=never (same-host tag-and-load)"
@@ -398,7 +354,7 @@ else
   fail "docs missing PULL_POLICY=never / SKIP_PULL=1"
 fi
 set +e
-out="$(cd "$SHOP" && SKIP_PULL=1 bash deploy/vps-release.sh --dry-run 2>&1)"
+out="$(cd "$SHOP" && SKIP_PULL=1 fyrst-cli shopware deploy release --dry-run 2>&1)"
 rc=$?
 set -e
 if [[ "$rc" -eq 0 ]] && printf '%s' "$out" | grep -q 'DRY-RUN skip compose pull' \
@@ -409,7 +365,7 @@ else
   fail "SKIP_PULL dry-run rc=$rc out=$out"
 fi
 set +e
-out="$(cd "$SHOP" && bash deploy/vps-release.sh --skip-pull --dry-run 2>&1)"
+out="$(cd "$SHOP" && fyrst-cli shopware deploy release --skip-pull --dry-run 2>&1)"
 rc=$?
 set -e
 if [[ "$rc" -eq 0 ]] && printf '%s' "$out" | grep -q 'DRY-RUN skip compose pull'; then
@@ -432,27 +388,27 @@ if grep -q 'does not delete it' "$ROOT/post-install.txt" \
 else
   fail "docs missing do-not-auto-delete wording"
 fi
-if grep -q 'init-env.sh --vps' "$ROOT/post-install.txt" \
-  && grep -q 'init-env.sh --vps' "$DEPLOY/README.md" \
-  && grep -q 'init-env.sh --vps' "$ROOT/root/.env.example"; then
-  pass "docs point at deploy/init-env.sh --vps for the VPS footgun"
+if grep -q 'env init --vps' "$ROOT/post-install.txt" \
+  && grep -q 'env init --vps' "$DEPLOY/README.md" \
+  && grep -q 'env init --vps' "$ROOT/root/.env.example"; then
+  pass "docs point at fyrst-cli shopware env init --vps for the VPS footgun"
 else
-  fail "docs missing deploy/init-env.sh --vps"
+  fail "docs missing env init --vps"
 fi
-if grep -q 'init-env.sh --shop-id' "$ROOT/post-install.txt" \
+if grep -q 'env init --shop-id' "$ROOT/post-install.txt" \
   && grep -q '###> fyrst/shopware-cd ###' "$DEPLOY/README.md"; then
-  pass "post-install + deploy README document Flex env + init-env --shop-id"
+  pass "post-install + deploy README document Flex env + env init --shop-id"
 else
-  fail "docs missing Flex env / init-env --shop-id"
+  fail "docs missing Flex env / env init --shop-id"
 fi
 printf 'COMPOSE_PROJECT_NAME=sw-shop-acme\n' >>"$SHOP/.env"
 set +e
-out="$(cd "$SHOP" && bash deploy/vps-release.sh --dry-run 2>&1)"
+out="$(cd "$SHOP" && fyrst-cli shopware deploy release --dry-run 2>&1)"
 rc=$?
 set -e
 if [[ "$rc" -eq 0 ]] && printf '%s' "$out" | grep -q 'overrides Compose name:' \
   && printf '%s' "$out" | grep -q 'sw-shop-acme'; then
-  pass "vps-release warns when create's COMPOSE_PROJECT_NAME is set"
+  pass "deploy release warns when create's COMPOSE_PROJECT_NAME is set"
 else
   fail "COMPOSE_PROJECT_NAME warning rc=$rc out=$out"
 fi

@@ -1,18 +1,16 @@
 #!/usr/bin/env bash
-# Acceptance checks for deploy/init-env.sh (post-create .env automation).
+# Acceptance checks for fyrst-cli shopware env init (post-create .env automation).
 # No Docker required. Run from anywhere:
 #   bash fyrst/shopware-cd/1.0/tests/init-env.test.sh
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-DEPLOY="${ROOT}/root/deploy"
-INIT="$DEPLOY/init-env.sh"
 EXAMPLE="${ROOT}/root/.env.example"
 FAILS=0
 
 if ! command -v fyrst-cli >/dev/null 2>&1; then
-  printf 'FAIL fyrst-cli 0.1.0+ is required (wrappers exec it). Install:\n' >&2
+  printf 'FAIL fyrst-cli 0.1.0+ is required. Install:\n' >&2
   printf '  curl -fsSL https://raw.githubusercontent.com/fyrst-dev/cli/main/scripts/install.sh | bash\n' >&2
   exit 1
 fi
@@ -20,43 +18,9 @@ fi
 pass() { printf 'ok  %s\n' "$*"; }
 fail() { printf 'FAIL %s\n' "$*" >&2; FAILS=$((FAILS + 1)); }
 
-assert_file() {
-  if [[ -f "$1" ]]; then
-    pass "exists $1"
-  else
-    fail "missing $1"
-  fi
-}
-
-assert_exec() {
-  if [[ -x "$1" ]]; then
-    pass "executable $1"
-  else
-    fail "not executable $1"
-  fi
-}
-
-echo "==> named files + syntax"
-assert_file "$INIT"
-assert_exec "$INIT"
-if bash -n "$INIT"; then
-  pass "bash -n init-env.sh"
-else
-  fail "bash -n init-env.sh"
-fi
-if command -v shellcheck >/dev/null 2>&1; then
-  if shellcheck -x "$INIT"; then
-    pass "shellcheck init-env.sh"
-  else
-    fail "shellcheck init-env.sh"
-  fi
-else
-  echo "==> shellcheck not installed (bash -n only)"
-fi
-
 echo "==> --help"
 set +e
-out="$(bash "$INIT" --help 2>&1)"
+out="$(fyrst-cli shopware env init --help 2>&1)"
 rc=$?
 set -e
 if [[ "$rc" -eq 0 ]] && printf '%s' "$out" | grep -q -- '--shop-id' \
@@ -93,7 +57,7 @@ trap 'rm -rf "$TMP"' EXIT
 EMPTY="$TMP/empty"
 mkdir -p "$EMPTY"
 set +e
-out="$(COMPOSE_DIR="$EMPTY" bash "$INIT" --shop-id acme 2>&1)"
+out="$(COMPOSE_DIR="$EMPTY" fyrst-cli shopware env init --shop-id acme 2>&1)"
 rc=$?
 set -e
 if [[ "$rc" -ne 0 ]] && printf '%s' "$out" | grep -q 'Missing' \
@@ -125,7 +89,7 @@ EOF
 cp "$SHOP/.env" "$SHOP/.env.before"
 
 set +e
-out="$(COMPOSE_DIR="$SHOP" bash "$INIT" --shop-id acme --env live --vps --image ghcr.io/example/acme --dry-run 2>&1)"
+out="$(COMPOSE_DIR="$SHOP" fyrst-cli shopware env init --shop-id acme --env live --vps --image ghcr.io/example/acme --dry-run 2>&1)"
 rc=$?
 set -e
 if [[ "$rc" -eq 0 ]] && printf '%s' "$out" | grep -q 'DRY-RUN' \
@@ -143,7 +107,7 @@ else
 fi
 
 set +e
-out="$(COMPOSE_DIR="$SHOP" bash "$INIT" --shop-id acme --env live --vps --image ghcr.io/example/acme 2>&1)"
+out="$(COMPOSE_DIR="$SHOP" fyrst-cli shopware env init --shop-id acme --env live --vps --image ghcr.io/example/acme 2>&1)"
 rc=$?
 set -e
 if [[ "$rc" -eq 0 ]] && printf '%s' "$out" | grep -q 'SHOPWARE_SHOP_ID=acme' \
@@ -194,7 +158,7 @@ COPY_SHOP="$TMP/copy-shop"
 mkdir -p "$COPY_SHOP"
 cp "$EXAMPLE" "$COPY_SHOP/.env.example"
 set +e
-out="$(COMPOSE_DIR="$COPY_SHOP" bash "$INIT" --shop-id widgets --env staging 2>&1)"
+out="$(COMPOSE_DIR="$COPY_SHOP" fyrst-cli shopware env init --shop-id widgets --env staging 2>&1)"
 rc=$?
 set -e
 if [[ "$rc" -eq 0 && -f "$COPY_SHOP/.env" ]] && printf '%s' "$out" | grep -q 'copy .env.example' \
@@ -219,7 +183,7 @@ mkdir -p "$NEED"
 printf 'APP_URL=\nSHOPWARE_SHOP_ID=\n' >"$NEED/.env"
 cp "$EXAMPLE" "$NEED/.env.example"
 set +e
-out="$(COMPOSE_DIR="$NEED" bash "$INIT" 2>&1)"
+out="$(COMPOSE_DIR="$NEED" fyrst-cli shopware env init 2>&1)"
 rc=$?
 set -e
 if [[ "$rc" -ne 0 ]] && printf '%s' "$out" | grep -q -- '--shop-id'; then
@@ -228,7 +192,7 @@ else
   fail "empty shop id rc=$rc out=$out"
 fi
 set +e
-out="$(COMPOSE_DIR="$SHOP" bash "$INIT" --shop-id acme --env prod 2>&1)"
+out="$(COMPOSE_DIR="$SHOP" fyrst-cli shopware env init --shop-id acme --env prod 2>&1)"
 rc=$?
 set -e
 if [[ "$rc" -ne 0 ]] && printf '%s' "$out" | grep -qiE 'invalid value|live, staging, playground'; then
@@ -248,7 +212,7 @@ APP_URL=
 EOF
 cp "$EXAMPLE" "$KEEP/.env.example"
 set +e
-out="$(COMPOSE_DIR="$KEEP" bash "$INIT" 2>&1)"
+out="$(COMPOSE_DIR="$KEEP" fyrst-cli shopware env init 2>&1)"
 rc=$?
 set -e
 if [[ "$rc" -eq 0 ]] && grep -q '^SHOPWARE_SHOP_ID=acme$' "$KEEP/.env" \
@@ -263,7 +227,7 @@ else
   fail "invented APP_URL"
 fi
 set +e
-out="$(COMPOSE_DIR="$KEEP" bash "$INIT" --generate-app-secret 2>&1)"
+out="$(COMPOSE_DIR="$KEEP" fyrst-cli shopware env init --generate-app-secret 2>&1)"
 rc=$?
 set -e
 secret="$(grep '^APP_SECRET=' "$KEEP/.env" | tail -n1 | cut -d= -f2-)"
@@ -275,7 +239,7 @@ else
 fi
 old_secret=$secret
 set +e
-out="$(COMPOSE_DIR="$KEEP" bash "$INIT" --generate-app-secret 2>&1)"
+out="$(COMPOSE_DIR="$KEEP" fyrst-cli shopware env init --generate-app-secret 2>&1)"
 rc=$?
 set -e
 secret2="$(grep '^APP_SECRET=' "$KEEP/.env" | tail -n1 | cut -d= -f2-)"
@@ -287,7 +251,7 @@ fi
 
 echo "==> --vps is idempotent (already commented)"
 set +e
-out="$(COMPOSE_DIR="$SHOP" bash "$INIT" --shop-id acme --vps 2>&1)"
+out="$(COMPOSE_DIR="$SHOP" fyrst-cli shopware env init --shop-id acme --vps 2>&1)"
 rc=$?
 set -e
 count="$(grep -c 'commented by deploy/init-env.sh --vps' "$SHOP/.env" || true)"

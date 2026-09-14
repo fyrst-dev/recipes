@@ -1,3 +1,0 @@
-source-path=SCRIPTDIR
-# Stubs assign SCRIPT_DIR then source lib/dispatch.sh.
-disable=SC1091

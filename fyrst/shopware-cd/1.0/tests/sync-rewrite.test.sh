@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Rewrite stays fyrst:sales-channel:rewrite-urls (shopware-cd package).
-# Overlay wrappers pass env through to fyrst-cli; they do not rewrite in bash.
+# Overlay does not rewrite in bash; fyrst-cli shopware sync apply owns the path.
 #   bash fyrst/shopware-cd/1.0/tests/sync-rewrite.test.sh
 
 set -euo pipefail
@@ -50,24 +50,20 @@ else
   fail "post-install dropped rewrite command"
 fi
 
-echo "==> restore dispatches sync apply (FYRST_CLI mock)"
-TMP="$(mktemp -d)"
-MOCK="$TMP/fyrst-cli"
-ARGV="$TMP/argv"
-cat >"$MOCK" <<'EOF'
-#!/usr/bin/env bash
-printf '%s\n' "$@" >"${FYRST_CLI_ARGV:?}"
-EOF
-chmod +x "$MOCK"
-FYRST_CLI="$MOCK" FYRST_CLI_ARGV="$ARGV" COMPOSE_DIR="$TMP" \
-  bash "$DEPLOY/sync-runtime.sh" restore --snapshot-dir "$TMP" --dry-run >/dev/null 2>&1
-got="$(tr '\n' ' ' <"$ARGV" | sed 's/[[:space:]]*$//')"
-if [[ "$got" == "shopware sync apply --snapshot-dir $TMP --dry-run" ]]; then
-  pass "sync wrapper still the apply path (rewrite happens in fyrst-cli)"
+echo "==> apply is the rewrite path (fyrst-cli)"
+if ! command -v fyrst-cli >/dev/null 2>&1; then
+  echo "==> skipping apply help (fyrst-cli not installed)"
 else
-  fail "sync wrapper missing apply mapping (got='$got')"
+  set +e
+  out="$(fyrst-cli shopware sync apply --help 2>&1)"
+  rc=$?
+  set -e
+  if [[ "$rc" -eq 0 ]] && printf '%s' "$out" | grep -q -- '--snapshot-dir'; then
+    pass "fyrst-cli shopware sync apply --help (rewrite happens in fyrst-cli)"
+  else
+    fail "sync apply --help rc=$rc out=$out"
+  fi
 fi
-rm -rf "$TMP"
 
 if [[ "$FAILS" -ne 0 ]]; then
   printf '\n%d check(s) failed\n' "$FAILS" >&2

@@ -1,8 +1,14 @@
 # VPS backup (not sync)
 
-**`deploy/sync-runtime.sh` is not a backup.** Sync clones live → staging/playground/dev. It refuses to restore onto live. Live MySQL (`mysql_data` named volume) and bind mounts under the derived data root sit on the **same VPS disk** as the checkout. Disk loss or a bad restore-from-live onto the wrong host is not covered by sync.
+**`fyrst-cli shopware sync` is not a backup.** Sync clones live → staging/playground/dev. It refuses to restore onto live. Live MySQL (`mysql_data` named volume) and bind mounts under the derived data root sit on the **same VPS disk** as the checkout. Disk loss or a bad restore-from-live onto the wrong host is not covered by sync.
 
-This file is the **backup** path: timestamped artifacts on another disk or another host, with retention, checksums, and a restore drill. `deploy/backup-runtime.sh` is a thin wrapper (`backup` → `fyrst-cli shopware backup create`, `prune` → `prune`, `restore` → `recover`). Install fyrst-cli 0.1.0+ on live.
+This file is the **backup** path: timestamped artifacts on another disk or another host, with retention, checksums, and a restore drill. Install fyrst-cli 0.1.0+ on live.
+
+| Command | Role |
+| --- | --- |
+| `fyrst-cli shopware backup create` | Copy artifacts into `BACKUP_TARGET` (live allowed) |
+| `fyrst-cli shopware backup prune` | Stamp-based retention |
+| `fyrst-cli shopware backup recover` | Disaster recovery onto this host |
 
 Non-goals: WAL shipping / PITR, S3.
 
@@ -21,7 +27,7 @@ Layout on `BACKUP_TARGET`:
 $BACKUP_TARGET/$SHOPWARE_SHOP_ID/$SHOPWARE_DEPLOY_ENV/YYYYMMDDTHHMMSSZ/
   db.sql.gz
   data/media/ …
-  MANIFEST.txt          # from sync snapshot
+  MANIFEST.txt          # from sync capture
   BACKUP_MANIFEST.txt  # shop id, env, target
   SHA256SUMS
 ```
@@ -41,25 +47,25 @@ Do not commit `deploy/backup.env`.
 
 ```bash
 # Preview (no dump). Allowed on live.
-bash deploy/backup-runtime.sh backup --dry-run
+fyrst-cli shopware backup create --dry-run
 
 # Nightly (live)
-bash deploy/backup-runtime.sh backup
+fyrst-cli shopware backup create
 
 # Retention only
-bash deploy/backup-runtime.sh prune
+fyrst-cli shopware backup prune
 
 # Restore onto this host (staging drill — no live flag)
-bash deploy/backup-runtime.sh restore --from 20260912T020000Z \
+fyrst-cli shopware backup recover --from 20260912T020000Z \
   --i-understand-this-restores-this-host
 ```
 
-`backup` always prunes after a successful snapshot. `BACKUP_KEEP_DAYS` (default 14, `0` = keep forever) deletes artifact directories whose **timestamp name** `YYYYMMDDTHHMMSSZ` is older than that many days (UTC).
+`backup create` always prunes after a successful snapshot. `BACKUP_KEEP_DAYS` (default 14, `0` = keep forever) deletes artifact directories whose **timestamp name** `YYYYMMDDTHHMMSSZ` is older than that many days (UTC).
 
 ## Cron (live)
 
 ```cron
-20 2 * * * cd /opt/shopware/acme-live && bash deploy/backup-runtime.sh backup
+20 2 * * * cd /opt/shopware/acme-live && fyrst-cli shopware backup create
 ```
 
 Overlapping runs are blocked with `flock` on `var/backup-runtime.lock`.
@@ -69,20 +75,20 @@ Overlapping runs are blocked with `flock` on `var/backup-runtime.lock`.
 Do this on **staging** first (every quarter). Live disaster recovery is the same commands plus `BACKUP_ALLOW_LIVE_RESTORE=1`.
 
 1. Pick an artifact stamp from `$BACKUP_TARGET/<shop>/staging/` (or copy a live artifact to the staging host).
-2. `bash deploy/backup-runtime.sh restore --from <stamp> --i-understand-this-restores-this-host`
+2. `fyrst-cli shopware backup recover --from <stamp> --i-understand-this-restores-this-host`
 3. Confirm storefront/admin, then rewrite `sales_channel_domain` if the dump still has live URLs. On staging, `SYNC_REWRITE_APP_URL` (or `SYNC_REWRITE_URL_MAP`) in `deploy/sync.env` runs `bin/console fyrst:sales-channel:rewrite-urls` after restore; it is refused on live. Payment/shipping webhooks still need a manual check.
 4. Record the date on the ClickUp Secrets & checklist page.
 
 Live DR (only when live is already broken):
 
 ```bash
-BACKUP_ALLOW_LIVE_RESTORE=1 bash deploy/backup-runtime.sh restore --from <stamp> \
+BACKUP_ALLOW_LIVE_RESTORE=1 fyrst-cli shopware backup recover --from <stamp> \
   --i-understand-this-restores-this-host
 ```
 
 That sets `SYNC_ALLOW_LIVE_RESTORE=1` for the inner apply (`fyrst-cli shopware sync apply`). Sync still refuses live without that override. Inner apply imports `db.sql.gz` / `db.sql` and restores bind-mount trees — it does not dump.
 
-After a live restore, run `IMAGE_TAG=$(cat .deployed-tag) bash deploy/vps-release.sh` only if the running image tag no longer matches the dump; usually the image is fine and only data was restored.
+After a live restore, run `IMAGE_TAG=$(cat .deployed-tag) fyrst-cli shopware deploy release` only if the running image tag no longer matches the dump; usually the image is fine and only data was restored.
 
 ## Related
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Dump stays shopware-cli. Recipe wrappers must not dump or wrap dump.
+# Dump stays shopware-cli. Overlay and fyrst-cli must not dump or wrap dump.
 #   bash fyrst/shopware-cd/1.0/tests/sync-dump.test.sh
 
 set -euo pipefail
@@ -17,21 +17,10 @@ if [[ -e "$DEPLOY/lib/sync-dump.sh" ]]; then
 else
   pass "lib/sync-dump.sh is gone"
 fi
-if grep -RIn --include='*.sh' -E 'SYNC_DUMP_ENGINE|shopware-cli project dump' "$DEPLOY" \
-  | grep -v ':[[:space:]]*#' \
-  | grep -v 'Dump is shopware-cli' \
-  | grep -v 'never dump' \
-  | grep -v 'project dump on the source' \
-  | grep -v 'already-made' \
-  | grep -qv 'shopware-cli project dump'; then
-  if grep -RIn --include='*.sh' -E 'SYNC_DUMP_ENGINE=' "$DEPLOY" \
-    | grep -v ':[[:space:]]*#'; then
-    fail "wrappers still assign SYNC_DUMP_ENGINE"
-  else
-    pass "wrappers do not implement dump engines"
-  fi
+if compgen -G "$DEPLOY/*.sh" >/dev/null || [[ -d "$DEPLOY/lib" ]]; then
+  fail "deploy still ships shell wrappers"
 else
-  pass "wrappers do not implement dump engines"
+  pass "no overlay shell wrappers"
 fi
 
 echo "==> docs: dump is shopware-cli forever"
@@ -66,11 +55,8 @@ if command -v fyrst-cli >/dev/null 2>&1; then
   TMP="$(mktemp -d)"
   trap 'rm -rf "$TMP"' EXIT
   SHOP="$TMP/acme-staging"
-  mkdir -p "$SHOP/deploy/lib"
-  cp "$DEPLOY/sync-runtime.sh" "$SHOP/deploy/"
-  cp "$DEPLOY/lib/"*.sh "$SHOP/deploy/lib/"
+  mkdir -p "$SHOP/deploy"
   cp "$DEPLOY/compose.yaml" "$DEPLOY/compose.prod.yaml" "$DEPLOY/compose.vps.yaml" "$SHOP/deploy/"
-  chmod +x "$SHOP/deploy/sync-runtime.sh"
   cat >"$SHOP/.env" <<'EOF'
 IMAGE=ghcr.io/example/acme
 IMAGE_TAG=tag-b
@@ -78,14 +64,14 @@ SHOPWARE_SHOP_ID=acme
 SHOPWARE_DEPLOY_ENV=staging
 EOF
   set +e
-  out="$(cd "$SHOP" && bash deploy/sync-runtime.sh snapshot --from local --data db --dry-run 2>&1)"
+  out="$(cd "$SHOP" && fyrst-cli shopware sync capture --from local --data db --dry-run 2>&1)"
   rc=$?
   set -e
   if [[ "$rc" -eq 2 ]] && printf '%s' "$out" | grep -q 'shopware-cli project dump' \
     && ! printf '%s' "$out" | grep -q 'docker run'; then
-    pass "snapshot --data db exits 2 and points at shopware-cli (no docker run)"
+    pass "capture --data db exits 2 and points at shopware-cli (no docker run)"
   else
-    fail "snapshot --data db rc=$rc out=$out"
+    fail "capture --data db rc=$rc out=$out"
   fi
 else
   echo "==> skipping capture --data db (fyrst-cli not installed)"
