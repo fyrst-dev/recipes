@@ -8,7 +8,7 @@ Locked process: [Shopware Create & Continuous Deploy](https://app.clickup.com/90
 
 ## Why this page exists
 
-A future managed host (PaaS-style / mittwald-style container runtime) would reuse the same image and `shopware-deployment-helper` flags. Until a real host is chosen and wired, treat Compose/VPS (`deploy/vps-release.sh`) as the **only** supported deploy path.
+A future managed host (PaaS-style / mittwald-style container runtime) would reuse the same image and `shopware-deployment-helper` flags. Until a real host is chosen and wired, treat Compose/VPS (`fyrst-cli shopware deploy release`) as the **only** supported deploy path.
 
 ## What would stay the same (when implemented)
 
@@ -43,7 +43,7 @@ The former `deploy_managed` stub jobs in `.github/workflows/cd.yaml` and `.gitla
   ```
 
 - [ ] Health/smoke URL after rollout
-- [ ] Rollback: redeploy the previous `:sha` tag (`deploy/vps-rollback.sh` on Compose)
+- [ ] Rollback: redeploy the previous `:sha` tag (`fyrst-cli shopware deploy rollback` on Compose)
 
 ## Keep identical across hosts (future)
 
