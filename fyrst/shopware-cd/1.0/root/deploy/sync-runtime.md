@@ -1,16 +1,22 @@
 # Runtime data sync (VPS, no object storage)
 
-**This is not a backup.** Sync clones live → staging / playground / dev. It refuses to restore onto live. Off-host backups with retention, checksums, and a quarterly restore drill are **[backup-runtime.md](backup-runtime.md)** (`deploy/backup-runtime.sh`, cron on **live**). Snapshot on live via this script is allowed and is what the backup wrapper calls.
+**This is not a backup.** Sync clones live → staging / playground / dev. It refuses to restore onto live. Off-host backups with retention, checksums, and a quarterly restore drill are **[backup-runtime.md](backup-runtime.md)** (`deploy/backup-runtime.sh` → `fyrst-cli shopware backup`, cron on **live**). Volume capture on live is allowed. Dump stays **`shopware-cli project dump`**.
 
 Pull **database + runtime upload trees** from another Shopware VPS onto this one. Typical direction: **live → staging / playground / dev**.
 
 For a **local** `shopware-cli project dev` tree (path remap into `./public/media/`, `./files/`, …; **no database**; never `SHOPWARE_DATA_ROOT` on the laptop), use **`deploy/sync-runtime-local.sh`**. This document is the VPS bind-mount + DB path.
 
-This is **not** part of image CD. `deploy/vps-release.sh` is unchanged (pull image, setup helper, recreate `web`). Runtime files stay out of git and out of the Shopware app image (`/.dockerignore` already excludes `/deploy` and `/var`).
+This is **not** part of image CD. `deploy/vps-release.sh` still pulls the image, runs setup, and recreates `web` (via fyrst-cli). Runtime files stay out of git and out of the Shopware app image (`/.dockerignore` already excludes `/deploy` and `/var`).
 
-Operators still run **`deploy/sync-runtime.sh`** (same commands, flags, and `deploy/sync.env` vars). Implementation is sourced from `deploy/lib/` — do not put those files on cron.
+Operators still run **`deploy/sync-runtime.sh`** (same overlay verbs, flags, and `deploy/sync.env` vars). The script is a thin wrapper:
 
-Object storage (S3 and similar) is **out of scope** for this VPS path. Transfer is SSH + **`shopware-cli project dump`** (gzip SQL) + **rsync of bind-mount directories** under `SHOPWARE_DATA_ROOT`. Named-volume docker-tar is only a fallback if those directories are missing. Restore still uses the MySQL/MariaDB client (shopware-cli does not replace import).
+| Overlay | fyrst-cli |
+| --- | --- |
+| `snapshot` | `fyrst-cli shopware sync capture` |
+| `restore` | `fyrst-cli shopware sync apply` |
+| `sync` | `fyrst-cli shopware sync pull` |
+
+Object storage (S3 and similar) is **out of scope** for this VPS path. Transfer is SSH + **rsync of bind-mount directories** under `SHOPWARE_DATA_ROOT`. **Dump is operator-run `shopware-cli project dump`** — fyrst-cli never dumps. Named-volume docker-tar is only a fallback if those directories are missing. Restore uses `fyrst-cli shopware db import` (MySQL/MariaDB client).
 
 After recipe updates: `composer recipes:update fyrst/shopware-cd`, then `bash deploy/init-env.sh` (or merge new `.env.example` keys (`SHOPWARE_SHOP_ID`, `SHOPWARE_DEPLOY_ENV`, optional `SHOPWARE_DATA_BASE`) into each environment's `.env` by hand). `COMPOSE_PROJECT_NAME` / `SHOPWARE_DATA_ROOT` are optional script overrides — Compose does not require them.
 
@@ -64,7 +70,7 @@ Default `--data all` (same as omitting `--data`):
 
 | Item | Mechanism |
 | --- | --- |
-| `db` | Logical SQL dump via `shopware-cli project dump` (one-shot `ghcr.io/shopware/shopware-cli:0.18.4` on the Compose network, or `--network host` for `DATABASE_URL`). Restore is still `mysql`/`mariadb` client import. |
+| `db` | Operator-run `shopware-cli project dump` into `--snapshot-dir/db.sql.gz`. fyrst-cli never dumps (`sync capture --data db` exits 2 with that instruction). Restore is `fyrst-cli shopware db import`. |
 | `media` `files` `thumbnail` `theme` `sitemap` | rsync of `$SHOPWARE_DATA_ROOT/<item>/` (source → dest). Tar + docker extract if rsync cannot write uid 82; named-volume tar only if the bind-mount dir is missing |
 
 Do not put dumps in git.
@@ -78,7 +84,8 @@ On **every** VPS that snapshots or restores:
 - OpenSSH client
 - gzip (restore + bind-mount tar fallback)
 - **rsync** (incremental live → staging of bind-mount trees; tar is the fallback)
-- Registry access to pull **`ghcr.io/shopware/shopware-cli:0.18.4`** (dumps). The compose `web` image does **not** ship shopware-cli.
+- **fyrst-cli 0.1.0+** on PATH (wrappers exec it)
+- **shopware-cli** on hosts that dump (fyrst-cli never dumps)
 
 The SSH user must be able to run `docker` (typically the `docker` group). Direct rsync into `SHOPWARE_DATA_ROOT` needs write access (cron as root, or the script chowns via a one-shot container).
 
@@ -95,7 +102,7 @@ On staging (or playground/dev), not on live:
 
 Do not commit `deploy/sync.env` (add it to the shop `.gitignore`; that file is owned by `shopware-cli project create`).
 
-Live should still have `SYNC_ENV=live` and `SHOPWARE_DEPLOY_ENV=live` in its own env files if they exist, so a mistaken `restore`/`sync` on live is refused. Snapshot on live is allowed (used by `deploy/backup-runtime.sh`). Live disaster restore is `BACKUP_ALLOW_LIVE_RESTORE=1` on the backup script, not a normal sync.
+Live should still have `SYNC_ENV=live` and `SHOPWARE_DEPLOY_ENV=live` in its own env files if they exist, so a mistaken `restore`/`sync` on live is refused. Volume capture on live is allowed. Live disaster restore is `BACKUP_ALLOW_LIVE_RESTORE=1` on the backup wrapper, not a normal sync.
 
 ## Commands
 
@@ -105,7 +112,7 @@ Run from the **shop root** (or rely on the script `cd` to the parent of `deploy/
 # Preview (no dump/copy/restore)
 bash deploy/sync-runtime.sh sync --from live --data all --dry-run
 
-# Cron path: shopware-cli dump of live DB, rsync SHOPWARE_DATA_ROOT trees, restore DB here
+# Cron path: rsync trees + import an already-present db.sql.gz (does not dump)
 bash deploy/sync-runtime.sh sync --from live --data all
 
 # Snapshot only (this host → --snapshot-dir)
@@ -128,30 +135,15 @@ Flags:
 | `--dry-run` | Log actions only |
 | `--skip-db` / `--skip-volumes` | Subtract db or the bind-mount trees from `--data` |
 
-### Database dump (`shopware-cli project dump`)
+### Database dump (`shopware-cli project dump` only)
 
-Production Shopware images do **not** include shopware-cli. Sync/backup start a **one-shot container** from the pinned official image, join the Compose network so hostname `mysql` resolves, and mount the shop root so `.env` / `.shopware-project.yml` (`dump.ignore` / `dump.rewrite`) are visible:
+Recipe wrappers and fyrst-cli **do not dump**. On the source, run shopware-cli yourself and place `db.sql.gz` in `--snapshot-dir` (default `<shop>/var/runtime-sync`) before `sync` / `restore`, or import with `fyrst-cli shopware db import --file`.
 
-```text
-docker run --rm --network ${COMPOSE_PROJECT_NAME}_default \
-  -v <shop-root>:<shop-root>:ro -v <snapshot-dir>:<snapshot-dir> -w <shop-root> \
-  ghcr.io/shopware/shopware-cli:0.18.4 \
-  --no-update-hint project dump \
-  --skip-lock-tables --quick --clean --compression=gzip \
-  --output <snapshot-dir>/db.sql.gz \
-  --host mysql --port 3306 --username … --database …
+```bash
+shopware-cli project dump --skip-lock-tables --compression=gzip --output db.sql.gz
 ```
 
-Pin: **`ghcr.io/shopware/shopware-cli:0.18.4`**. Override with `SYNC_SHOPWARE_CLI_IMAGE`. If the image cannot be pulled, the script **fails** with `docker pull` guidance — it does **not** fall back to mysqldump. Escape hatch: `SYNC_DUMP_ENGINE=mysqldump`.
-
-| Env | Default | Effect |
-| --- | --- | --- |
-| `SYNC_DUMP_CLEAN` | `1` | `--clean` (skip cart / messenger / log noise). `0` keeps those rows. |
-| `SYNC_DUMP_ANONYMIZE` | `0` | `1` adds `--anonymize` (usually off for live→staging) |
-| `SYNC_DUMP_QUICK` | `1` | `--quick`. `0` opts out. |
-| `SYNC_DUMP_ENGINE` | `shopware-cli` | `mysqldump` = old compose-exec / client-image dump |
-
-Restore is unchanged: `gzip -dc db.sql.gz` piped into `mysql`/`mariadb` (compose exec or `--network host` client). shopware-cli is dump-only.
+See the [Shopware CLI dump docs](https://developer.shopware.com/docs/products/tools/cli/project-commands/mysql-dump.html). `sync capture --data db` exits 2 with that instruction (not a silent success). Restore is `fyrst-cli shopware db import` (compose `mysql` exec or a one-shot client).
 
 ### Cron (consumer)
 
@@ -193,7 +185,7 @@ Overlapping runs are blocked with `flock` on `var/runtime-sync.lock`.
 
 ## External database
 
-If the bundled `mysql` service was removed, a **local** snapshot uses `shopware-cli project dump` with `--network host` and credentials from `DATABASE_URL`. Restore still uses a one-shot `mysql`/`mariadb` client container (`--network host`). A **remote** dump over SSH requires the source to still have compose `mysql`, or run `snapshot --from local` on the source and copy `var/runtime-sync` yourself.
+If the bundled `mysql` service was removed, dump with shopware-cli against `DATABASE_URL` on the source. Restore still uses a one-shot `mysql`/`mariadb` client container (`--network host`) via `fyrst-cli shopware db import`. Copy `db.sql.gz` into `--snapshot-dir` yourself.
 
 ## Named-volume fallback
 

@@ -11,6 +11,12 @@ INIT="$DEPLOY/init-env.sh"
 EXAMPLE="${ROOT}/root/.env.example"
 FAILS=0
 
+if ! command -v fyrst-cli >/dev/null 2>&1; then
+  printf 'FAIL fyrst-cli 0.1.0+ is required (wrappers exec it). Install:\n' >&2
+  printf '  curl -fsSL https://raw.githubusercontent.com/fyrst-dev/cli/main/scripts/install.sh | bash\n' >&2
+  exit 1
+fi
+
 pass() { printf 'ok  %s\n' "$*"; }
 fail() { printf 'FAIL %s\n' "$*" >&2; FAILS=$((FAILS + 1)); }
 
@@ -225,7 +231,7 @@ set +e
 out="$(COMPOSE_DIR="$SHOP" bash "$INIT" --shop-id acme --env prod 2>&1)"
 rc=$?
 set -e
-if [[ "$rc" -ne 0 ]] && printf '%s' "$out" | grep -qi 'live, staging, playground, or dev'; then
+if [[ "$rc" -ne 0 ]] && printf '%s' "$out" | grep -qiE 'invalid value|live, staging, playground'; then
   pass "refuses invalid --env"
 else
   fail "invalid --env rc=$rc out=$out"

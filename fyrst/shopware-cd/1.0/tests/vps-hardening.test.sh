@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Acceptance checks for VPS production hardening (#10, #13–#16)
-# plus day-2 ops extras used by #18 / #19.
-# No Docker required. Run from anywhere:
+# Acceptance checks for VPS production hardening + fyrst-cli wrappers.
+# Behavioral script checks need fyrst-cli 0.1.0+. No Docker required for most.
 #   bash fyrst/shopware-cd/1.0/tests/vps-hardening.test.sh
 
 set -euo pipefail
@@ -29,9 +28,15 @@ assert_exec() {
   fi
 }
 
+if ! command -v fyrst-cli >/dev/null 2>&1; then
+  printf 'FAIL fyrst-cli 0.1.0+ is required (wrappers exec it). Install:\n' >&2
+  printf '  curl -fsSL https://raw.githubusercontent.com/fyrst-dev/cli/main/scripts/install.sh | bash\n' >&2
+  exit 1
+fi
+
 echo "==> bash -n"
 for s in \
-  "$DEPLOY"/lib/*.sh \
+  "$DEPLOY/lib/fyrst-cli.sh" \
   "$DEPLOY/vps-release.sh" \
   "$DEPLOY/vps-rollback.sh" \
   "$DEPLOY/backup-runtime.sh" \
@@ -48,8 +53,11 @@ done
 
 if command -v shellcheck >/dev/null 2>&1; then
   echo "==> shellcheck"
-  if shellcheck -x "$DEPLOY/vps-release.sh" "$DEPLOY/vps-rollback.sh" "$DEPLOY/backup-runtime.sh" "$DEPLOY/init-env.sh" "$DEPLOY"/lib/*.sh; then
-    pass "shellcheck release/rollback/backup/lib/init-env"
+  if shellcheck -x "$DEPLOY/vps-release.sh" "$DEPLOY/vps-rollback.sh" \
+    "$DEPLOY/backup-runtime.sh" "$DEPLOY/init-env.sh" \
+    "$DEPLOY/sync-runtime.sh" "$DEPLOY/sync-runtime-local.sh" \
+    "$DEPLOY/lib/fyrst-cli.sh"; then
+    pass "shellcheck wrappers + helper"
   else
     fail "shellcheck"
   fi
@@ -67,7 +75,7 @@ assert_file "$DEPLOY/backup-runtime.md"
 assert_file "$DEPLOY/backup.env.example"
 assert_file "$DEPLOY/edge/Caddyfile"
 assert_file "$DEPLOY/edge/README.md"
-assert_file "$DEPLOY/lib/vps-common.sh"
+assert_file "$DEPLOY/lib/fyrst-cli.sh"
 assert_exec "$DEPLOY/init-env.sh"
 
 echo "==> healthcheck path (#14)"
@@ -116,7 +124,8 @@ for needle in \
   'api/_info/health-check' \
   'backup-runtime.sh' \
   'Sync is not a backup' \
-  'deploy/edge/Caddyfile'
+  'deploy/edge/Caddyfile' \
+  'fyrst-cli'
 do
   if grep -q "$needle" "$DEPLOY/README.md"; then
     pass "README mentions ${needle}"
@@ -124,10 +133,11 @@ do
     fail "README missing ${needle}"
   fi
 done
-if grep -q 'vps-rollback.sh' "$ROOT/post-install.txt" && grep -q 'backup-runtime.sh' "$ROOT/post-install.txt"; then
+if grep -q 'vps-rollback.sh' "$ROOT/post-install.txt" && grep -q 'backup-runtime.sh' "$ROOT/post-install.txt" \
+  && grep -q 'fyrst-cli' "$ROOT/post-install.txt"; then
   pass "post-install pointers"
 else
-  fail "post-install missing rollback/backup pointers"
+  fail "post-install missing rollback/backup/fyrst-cli pointers"
 fi
 if grep -qi 'not a backup' "$DEPLOY/sync-runtime.md"; then
   pass "sync-runtime.md says sync is not a backup"
@@ -135,54 +145,14 @@ else
   fail "sync-runtime.md missing sync ≠ backup"
 fi
 
-echo "==> helper: rollback command + auto-rollback flag"
-# shellcheck source=../root/deploy/lib/vps-common.sh
-SCRIPT_DIR="$DEPLOY"
-# shellcheck disable=SC1091
-source "$DEPLOY/lib/vps-common.sh"
-cmd="$(vps_rollback_command)"
-if [[ "$cmd" == 'IMAGE_TAG=$(cat .previous-tag) bash deploy/vps-rollback.sh' ]]; then
-  pass "printed rollback command matches issue #13"
-else
-  fail "rollback command is: $cmd"
-fi
-
-SHOPWARE_DEPLOY_ENV=live
-unset ROLLBACK_ON_SMOKE_FAIL || true
-if vps_should_auto_rollback; then
-  pass "auto-rollback default ON for live"
-else
-  fail "auto-rollback should default on for live"
-fi
-SHOPWARE_DEPLOY_ENV=staging
-if vps_should_auto_rollback; then
-  fail "auto-rollback should default off for staging"
-else
-  pass "auto-rollback default OFF for staging"
-fi
-ROLLBACK_ON_SMOKE_FAIL=1
-SHOPWARE_DEPLOY_ENV=staging
-if vps_should_auto_rollback; then
-  pass "ROLLBACK_ON_SMOKE_FAIL=1 enables staging"
-else
-  fail "explicit ROLLBACK_ON_SMOKE_FAIL=1 should enable"
-fi
-ROLLBACK_ON_SMOKE_FAIL=0
-SHOPWARE_DEPLOY_ENV=live
-if vps_should_auto_rollback; then
-  fail "ROLLBACK_ON_SMOKE_FAIL=0 should disable live"
-else
-  pass "ROLLBACK_ON_SMOKE_FAIL=0 disables live"
-fi
-unset ROLLBACK_ON_SMOKE_FAIL || true
-
-echo "==> fixture scripts (no docker)"
+echo "==> fixture scripts (no docker; real fyrst-cli)"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 SHOP="$TMP/acme-live"
 mkdir -p "$SHOP/deploy"
 cp "$DEPLOY/compose.yaml" "$DEPLOY/compose.prod.yaml" "$DEPLOY/compose.vps.yaml" "$SHOP/deploy/"
-cp -a "$DEPLOY/lib" "$SHOP/deploy/"
+mkdir -p "$SHOP/deploy/lib"
+cp "$DEPLOY/lib/fyrst-cli.sh" "$SHOP/deploy/lib/"
 cp "$DEPLOY/vps-release.sh" "$DEPLOY/vps-rollback.sh" "$DEPLOY/backup-runtime.sh" "$DEPLOY/sync-runtime.sh" "$SHOP/deploy/"
 chmod +x "$SHOP/deploy/"*.sh
 cat >"$SHOP/.env" <<'EOF'
@@ -190,9 +160,9 @@ IMAGE=ghcr.io/example/acme
 IMAGE_TAG=tag-b
 SHOPWARE_SHOP_ID=acme
 SHOPWARE_DEPLOY_ENV=live
-MYSQL_USER=shop
-MYSQL_PASSWORD=shop
-MYSQL_ROOT_PASSWORD=root
+MYSQL_USER=shopware
+MYSQL_PASSWORD=s3cret-not-in-logs
+MYSQL_ROOT_PASSWORD=root-not-in-logs
 EOF
 : >"$SHOP/.env.prod"
 
@@ -238,17 +208,6 @@ else
   pass "rollback dry-run does not pass run --no-build"
 fi
 
-echo "==> smoke-failure prints exact command"
-printf 'tag-a\n' >"$SHOP/.deployed-tag"
-# Force smoke fail by pointing SMOKE_URL at a closed port and skipping real compose:
-# dry-run smoke always succeeds, so drive the hint function instead.
-hint="$(vps_print_smoke_rollback_hint 'http://127.0.0.1:9' 2>&1 || true)"
-if printf '%s' "$hint" | grep -Fq 'IMAGE_TAG=$(cat .previous-tag) bash deploy/vps-rollback.sh'; then
-  pass "smoke-failure hint prints exact rollback command"
-else
-  fail "hint was: $hint"
-fi
-
 echo "==> backup on live (#15)"
 mkdir -p "$TMP/backups"
 set +e
@@ -264,6 +223,11 @@ if printf '%s' "$out" | grep -q "$TMP/backups"; then
   pass "backup dry-run uses BACKUP_TARGET"
 else
   fail "backup dry-run did not mention BACKUP_TARGET"
+fi
+if printf '%s' "$out" | grep -q 'shopware-cli project dump'; then
+  pass "backup dry-run tells operator to dump with shopware-cli"
+else
+  fail "backup dry-run missing shopware-cli dump instruction"
 fi
 
 echo "==> retention prune"
@@ -303,9 +267,9 @@ IMAGE=ghcr.io/example/acme
 IMAGE_TAG=deadbeef
 SHOPWARE_SHOP_ID=acme
 SHOPWARE_DEPLOY_ENV=live
-MYSQL_USER=shop
-MYSQL_PASSWORD=shop
-MYSQL_ROOT_PASSWORD=root
+MYSQL_USER=shopware
+MYSQL_PASSWORD=s3cret-not-in-logs
+MYSQL_ROOT_PASSWORD=root-not-in-logs
 EOF
   : >"$CFG/.env.prod"
   set +e
@@ -373,7 +337,6 @@ curl -fsS --max-time 4 http://127.0.0.1:18080/api/_info/health-check >/dev/null
 hc=$?
 curl -fsS --max-time 2 http://127.0.0.1:18080/ >/dev/null
 root=$?
-# closed port
 curl -fsS --max-time 2 http://127.0.0.1:18081/api/_info/health-check >/dev/null
 down=$?
 kill "$srv_pid" 2>/dev/null || true
@@ -408,35 +371,8 @@ if grep -q 'COMPOSE_PROFILES=redis,worker,scheduler' "$ROOT/post-install.txt" \
 else
   fail "post-install / README missing profiles"
 fi
-SHOPWARE_DEPLOY_ENV=live
-unset COMPOSE_PROFILES || true
-warn="$(vps_warn_empty_live_profiles 2>&1 || true)"
-if printf '%s' "$warn" | grep -q 'WARNING: SHOPWARE_DEPLOY_ENV=live but COMPOSE_PROFILES is empty' \
-  && printf '%s' "$warn" | grep -q 'COMPOSE_PROFILES=redis,worker,scheduler'; then
-  pass "vps-release warns on live with empty COMPOSE_PROFILES"
-else
-  fail "live empty-profiles warning was: $warn"
-fi
-SHOPWARE_DEPLOY_ENV=staging
-unset COMPOSE_PROFILES || true
-warn="$(vps_warn_empty_live_profiles 2>&1 || true)"
-if [[ -z "$warn" ]]; then
-  pass "no profiles warning on staging (does not auto-enable worker)"
-else
-  fail "staging must not warn about empty profiles: $warn"
-fi
-SHOPWARE_DEPLOY_ENV=live
-COMPOSE_PROFILES=redis,worker,scheduler
-warn="$(vps_warn_empty_live_profiles 2>&1 || true)"
-if [[ -z "$warn" ]]; then
-  pass "no warning when live profiles are set"
-else
-  fail "live with profiles should not warn: $warn"
-fi
-unset COMPOSE_PROFILES || true
 
-echo "==> compose run must not pass --no-build (Compose v5.5.1 rejects it)"
-# Exact run-flag forms only, ignoring comments. Do not match `up --no-build`.
+echo "==> wrappers do not pass compose run --no-build"
 if grep -RIn --include='*.sh' -- 'run --rm --no-build' "$DEPLOY" \
   | grep -v ':[[:space:]]*#' \
   || grep -RIn --include='*.sh' -- 'run --no-build' "$DEPLOY" \
@@ -444,18 +380,6 @@ if grep -RIn --include='*.sh' -- 'run --rm --no-build' "$DEPLOY" \
   fail "compose run still uses --no-build"
 else
   pass "no compose run --no-build in deploy scripts"
-fi
-if grep -q -- 'run --rm --pull never' "$DEPLOY/lib/vps-common.sh" \
-  && grep -q -- 'run --rm --pull never' "$DEPLOY/lib/sync-rewrite.sh" \
-  && grep -q -- 'run --rm --pull never' "$DEPLOY/lib/sync-app.sh"; then
-  pass "vps-common + sync rewrite/app use run --pull never"
-else
-  fail "setup/sync run is not --pull never"
-fi
-if grep -q -- 'up -d --no-build' "$DEPLOY/lib/vps-common.sh"; then
-  pass "compose up still uses --no-build"
-else
-  fail "compose up lost --no-build"
 fi
 
 echo "==> SKIP_PULL / PULL_POLICY=never (same-host tag-and-load)"
@@ -530,7 +454,6 @@ if [[ "$rc" -eq 0 ]] && printf '%s' "$out" | grep -q 'overrides Compose name:' \
 else
   fail "COMPOSE_PROJECT_NAME warning rc=$rc out=$out"
 fi
-# restore fixture .env (drop the sw-shop line)
 sed -i '/^COMPOSE_PROJECT_NAME=sw-shop-acme$/d' "$SHOP/.env"
 
 echo "==> create writes .shopware-project.yml (do not rename)"

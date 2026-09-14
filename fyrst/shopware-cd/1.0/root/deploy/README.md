@@ -24,6 +24,32 @@
 # `deploy/vps-release.sh` warns when the value does not match shop id + deploy env.
 # After recipe changes: `composer recipes:update fyrst/shopware-cd` then
 # `bash deploy/init-env.sh` (or merge new keys from `.env.example` by hand).
+# Wrappers exec fyrst-cli 0.1.0+ (`shopware env init`). Dump stays shopware-cli.
+
+## fyrst-cli (required on each VPS / laptop)
+
+`deploy/*.sh` copied into the shop are **thin wrappers**. They exec
+[fyrst-cli](https://github.com/fyrst-dev/cli) 0.1.0+. Install once per host:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/fyrst-dev/cli/main/scripts/install.sh | bash
+# pin: FYRST_CLI_VERSION=0.1.0 curl -fsSL … | bash
+```
+
+CI still runs `bash ./deploy/vps-release.sh`. Cron can keep the bash names.
+**Dump stays `shopware-cli project dump`.** fyrst-cli and these wrappers never dump.
+
+| Copied wrapper | fyrst-cli |
+| --- | --- |
+| `deploy/init-env.sh` | `fyrst-cli shopware env init` |
+| `deploy/vps-release.sh` | `fyrst-cli shopware deploy release` |
+| `deploy/vps-rollback.sh` | `fyrst-cli shopware deploy rollback` |
+| `deploy/sync-runtime.sh snapshot\|restore\|sync` | `fyrst-cli shopware sync capture\|apply\|pull` |
+| `deploy/sync-runtime-local.sh` | `fyrst-cli shopware sync local` |
+| `deploy/backup-runtime.sh backup\|prune\|restore` | `fyrst-cli shopware backup create\|prune\|recover` |
+
+Image build stays in CI. `shopware-cli project create` stays create. Compose
+templates under `deploy/` stay in this recipe.
 
 ## Model
 
@@ -71,6 +97,7 @@ from `.env.example` without clobbering existing non-empty values. It does
 ## One-time VPS bootstrap
 
 1. Install Docker Engine + Compose plugin. Do not install Shopware or PHP on the host.
+   Install **fyrst-cli 0.1.0+** (`scripts/install.sh` above). Wrappers fail without it.
 2. Checkout this shop repo (read-only deploy key) to a path such as `/opt/shopware/<shop>`.
    That path is `VPS_PATH` in CI.
 3. Finish `.env` (Flex may already have appended SoT keys). `chmod 600 .env`.
@@ -150,6 +177,7 @@ Named volumes become `acme-live_mysql_data`, `acme-staging_mysql_data`, … — 
 6. Optional `SMOKE_URL` check. **Writes `.deployed-tag` only after success.**
 7. On smoke failure: always prints
    `IMAGE_TAG=$(cat .previous-tag) bash deploy/vps-rollback.sh`
+   (wrapper) / `IMAGE_TAG=$(cat .previous-tag) fyrst-cli shopware deploy rollback`
    and **auto-runs that rollback when `SHOPWARE_DEPLOY_ENV=live`** (default on). Staging/dev stay manual unless `ROLLBACK_ON_SMOKE_FAIL=1`. Release still exits 1 after a successful auto-rollback so CI does not treat the bad tag as live. First deploys with no `.previous-tag` cannot roll back.
 
 Manual equivalent:
@@ -174,7 +202,7 @@ docker compose --env-file .env -f deploy/compose.yaml -f deploy/compose.prod.yam
 - `deploy/compose.yaml` — CD/VPS image-based stack
 - `deploy/compose.prod.yaml` — production overrides
 - `deploy/compose.vps.yaml` — `pull_policy: ${PULL_POLICY:-always}` (CI/VPS default). Same-host tag-and-load / air-gap: `PULL_POLICY=never` and `SKIP_PULL=1` (or `bash deploy/vps-release.sh --skip-pull`) so Compose does not pull a tag that was never pushed.
-`deploy/vps-release.sh` sources shop-root `.env` (shop id + env required), derives `COMPOSE_PROJECT_NAME` / `SHOPWARE_DATA_ROOT` when unset for logs/tools, then runs that command from `COMPOSE_DIR` (shop root). Compose itself does not need those two expanded vars.
+`deploy/vps-release.sh` execs `fyrst-cli shopware deploy release`, which loads shop-root `.env` (shop id + env required), derives `COMPOSE_PROJECT_NAME` / `SHOPWARE_DATA_ROOT` when unset for logs/tools, then runs that command from `COMPOSE_DIR` (shop root). Compose itself does not need those two expanded vars.
 
 Local development uses `shopware-cli project create`'s shop-root `compose.yaml` with `shopware-cli project dev`. This recipe does not copy that file. Create writes `.shopware-project.yml` (fine as-is; shopware-cli also accepts `.yaml` — do not rename).
 
@@ -241,7 +269,7 @@ Typical for deploy: `SSH_PRIVATE_KEY`, `VPS_HOST`, `VPS_USER`, `VPS_PATH`, `SSH_
 
 **Sync is not a backup.** `deploy/sync-runtime.sh` pulls **database + bind-mounted upload trees** from another VPS onto this one (usually live → staging). It refuses `SHOPWARE_DEPLOY_ENV=live` as a consumer. Off-host backups with retention are **[backup-runtime.md](backup-runtime.md)** (`deploy/backup-runtime.sh`, cron on live).
 
-DB snapshots use **`shopware-cli project dump`** in a one-shot container (`ghcr.io/shopware/shopware-cli:0.18.4` on the Compose network; `web` does not ship the CLI). Restore is still the MySQL/MariaDB client. See **[sync-runtime.md](sync-runtime.md)** for `--clean` / `--anonymize` defaults and `SYNC_DUMP_ENGINE=mysqldump`.
+DB snapshots use **`shopware-cli project dump`** run by the operator (fyrst-cli never dumps). Place `db.sql.gz` in `--snapshot-dir` or set `BACKUP_DB_DUMP`. Restore is `fyrst-cli shopware db import` (MySQL/MariaDB client). See **[sync-runtime.md](sync-runtime.md)**.
 
 When `SHOPWARE_DATA_ROOT` / `SYNC_DATA_ROOT` are unset, `deploy/sync-runtime.sh` derives
 
