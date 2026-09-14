@@ -39,10 +39,10 @@ else
   pass "no deploy/*.sh"
 fi
 
-echo "==> compose / edge / env examples kept"
+echo "==> compose / edge / runtime docs kept"
 for s in compose.yaml compose.prod.yaml compose.vps.yaml \
   edge/Caddyfile edge/README.md \
-  sync.env.example backup.env.example backup-runtime.md sync-runtime.md
+  backup-runtime.md sync-runtime.md
 do
   if [[ -f "$DEPLOY/$s" ]]; then
     pass "kept $s"
@@ -50,6 +50,43 @@ do
     fail "missing $s"
   fi
 done
+echo "==> deploy/*.env.example removed (shop-root .env.example is SoT)"
+for s in sync.env.example backup.env.example; do
+  if [[ -e "$DEPLOY/$s" ]]; then
+    fail "still present $s"
+  else
+    pass "removed $s"
+  fi
+done
+EXAMPLE="${ROOT}/root/.env.example"
+for needle in \
+  'SHOPWARE_SSH_HOST=' \
+  'SHOPWARE_SSH_USER=' \
+  'SHOPWARE_SSH_KEY=' \
+  'SHOPWARE_REMOTE_DATA_ROOT=' \
+  'BACKUP_TARGET=local' \
+  'BACKUP_KEEP_DAYS=14' \
+  'BACKUP_DB_DUMP=' \
+  'SHOPWARE_ALLOW_LIVE_RESTORE=1'
+do
+  if grep -q "$needle" "$EXAMPLE"; then
+    pass ".env.example comments ${needle}"
+  else
+    fail ".env.example missing ${needle}"
+  fi
+done
+if grep -qE 'copy deploy/(sync|backup)\.env\.example' "$EXAMPLE" \
+  "$DEPLOY/README.md" "$ROOT/root/.github/workflows/cd.yaml" \
+  "$ROOT/root/.gitlab-ci.yaml"; then
+  fail "docs still say copy deploy/sync.env.example or backup.env.example"
+else
+  pass "docs do not tell operators to copy deploy/*.env.example"
+fi
+if [[ -f "$DEPLOY/.gitignore" ]] && grep -qx '\*\.env' "$DEPLOY/.gitignore"; then
+  pass "deploy/.gitignore keeps leftover *.env out of git"
+else
+  fail "deploy/.gitignore missing *.env"
+fi
 
 echo "==> CI SSH runs fyrst-cli shopware deploy release"
 CD_YAML="$ROOT/root/.github/workflows/cd.yaml"

@@ -24,6 +24,8 @@
 # `fyrst-cli shopware deploy release` warns when the value does not match shop id + deploy env.
 # After recipe changes: `composer recipes:update fyrst/shopware-cd` then
 # `fyrst-cli shopware env init` (or merge new keys from `.env.example` by hand).
+# fyrst-cli loads `.env` then `.env.local` then `.env.prod`. Laptop SSH
+# (`SHOPWARE_SSH_*`) belongs in `.env.local`.
 # Install fyrst-cli 0.1.0+ on each VPS. Dump stays shopware-cli.
 
 ## fyrst-cli (required on each VPS / laptop)
@@ -144,7 +146,7 @@ from `.env.example` without clobbering existing non-empty values. It does
 7. `docker login` to that registry on the VPS (or use a credential helper / `~/.docker/config.json`).
 8. Put **host Caddy** in front of loopback `HTTP_PORT` (TLS). See **[edge/README.md](edge/README.md)** and `deploy/edge/Caddyfile`. Do not expose MySQL (`compose.prod.yaml` keeps `ports: []`).
 9. Store the previous image tag for rollback (release writes `.deployed-tag` / `.previous-tag`). Use `fyrst-cli shopware deploy rollback` — do not re-run a failed tag via CI unless you mean to.
-10. Copy `deploy/backup.env.example` → `deploy/backup.env` on **live** and enable nightly `fyrst-cli shopware backup create`. Sync is not a backup.
+10. On **live**, set `BACKUP_TARGET` (second disk or SSH) in shop-root `.env` / `.env.prod` and enable nightly `fyrst-cli shopware backup create`. Sync is not a backup.
 11. On **live**, uncomment `COMPOSE_PROFILES=redis,worker,scheduler` in `.env` (worker + scheduler; include redis if you use it). Staging should not inherit that unless documented.
 
 ## Several shops / live+staging on the same VPS
@@ -254,7 +256,7 @@ See **[backup-runtime.md](backup-runtime.md)**. Cron on live:
 20 2 * * * cd /opt/shopware/acme-live && fyrst-cli shopware backup create
 ```
 
-Copy `deploy/backup.env.example` → `deploy/backup.env`. `BACKUP_TARGET` = second disk or SSH. `BACKUP_KEEP_DAYS` (default 14) is implemented. Quarterly restore drill: restore onto staging first; live DR needs `BACKUP_ALLOW_LIVE_RESTORE=1`.
+Set `BACKUP_TARGET` in shop-root `.env` / `.env.prod` (second disk or SSH; default `local`). `BACKUP_KEEP_DAYS` (default 14) is implemented. Reuse `SHOPWARE_SSH_*` when the target is SSH. Quarterly restore drill: restore onto staging first; live DR needs `SHOPWARE_ALLOW_LIVE_RESTORE=1`.
 
 ## Managed host (planned)
 
@@ -274,17 +276,17 @@ Typical for deploy: `SSH_PRIVATE_KEY`, `VPS_HOST`, `VPS_USER`, `VPS_PATH`, `SSH_
 
 DB snapshots use **`shopware-cli project dump`** run by the operator (fyrst-cli never dumps). Place `db.sql.gz` in `--snapshot-dir` or set `BACKUP_DB_DUMP`. Restore is `fyrst-cli shopware db import` (MySQL/MariaDB client). See **[sync-runtime.md](sync-runtime.md)**.
 
-When `SHOPWARE_DATA_ROOT` / `SYNC_DATA_ROOT` are unset, fyrst-cli derives
+When `SHOPWARE_DATA_ROOT` is unset, fyrst-cli derives
 
 `$SHOPWARE_DATA_BASE/$SHOPWARE_SHOP_ID/$SHOPWARE_DEPLOY_ENV`
 
-(`SHOPWARE_DATA_BASE` default `/var/lib/shopware/data`). `--from live` remote root is `$BASE/$SHOPWARE_SHOP_ID/live` (or `SYNC_SOURCE_ENV`) unless `SYNC_REMOTE_DATA_ROOT` is set. Missing `SHOPWARE_SHOP_ID` is refused.
+(`SHOPWARE_DATA_BASE` default `/var/lib/shopware/data`). `--from live` remote root is `$BASE/$SHOPWARE_SHOP_ID/live` unless `SHOPWARE_REMOTE_DATA_ROOT` is set. Missing `SHOPWARE_SHOP_ID` is refused.
 
 `mysql_data` / `redis_data` stay named volumes and are not copied (use `--data db` for SQL).
 
 `init-perm` still chowns the bind-mount points (uid 82).
 
-See **[sync-runtime.md](sync-runtime.md)**. Copy `deploy/sync.env.example` → `deploy/sync.env`. Cron on the consumer:
+See **[sync-runtime.md](sync-runtime.md)**. Put `SHOPWARE_SSH_*` in shop-root `.env` (staging consumer) or `.env.local` (laptop). Cron on the consumer:
 
 ```cron
 15 2 * * * cd /opt/shopware/acme-staging && fyrst-cli shopware sync pull --from live --data all
@@ -294,21 +296,21 @@ See **[sync-runtime.md](sync-runtime.md)**. Copy `deploy/sync.env.example` → `
 fyrst-cli shopware sync pull --from live --data all --dry-run
 ```
 
-Restore/sync refuse `SYNC_ENV=live` and `SHOPWARE_DEPLOY_ENV=live` (and a checkout directory named `live`).
+Restore/sync refuse `SHOPWARE_DEPLOY_ENV=live` (and a checkout directory named `live`).
 
-Opt-in sales-channel domain rewrite after a DB restore: set `SYNC_REWRITE_APP_URL=https://staging.example.com` (or `SYNC_REWRITE_URL_MAP`) on the consumer. Default is off. Sync then runs `bin/console fyrst:sales-channel:rewrite-urls` (shops need `composer update fyrst/shopware-cd`). Rewrite is **impossible on live**. Payment/shipping webhooks still need a manual review. See **[sync-runtime.md](sync-runtime.md)**.
+Sales-channel domain rewrite after a DB restore uses `APP_URL` on the consumer. Sync then runs `bin/console fyrst:sales-channel:rewrite-urls` (shops need `composer update fyrst/shopware-cd`). Rewrite is **impossible on live** (**hard-refused**, including `SHOPWARE_ALLOW_LIVE_RESTORE=1`). Payment/shipping webhooks still need a manual review. See **[sync-runtime.md](sync-runtime.md)**.
 
 ## Local project dev pull (live → laptop)
 
 `fyrst-cli shopware sync local` rsyncs the same VPS bind-mount trees into a **`shopware-cli project dev`** checkout. Destinations are project-tree paths (`./public/media/`, `./files/`, …), **not** `SHOPWARE_DATA_ROOT`. The database is **not** restored. `--data all` is refused (on `sync pull` / `backup create`, `all` includes db). Use the default volume list or `--data media,files`.
 
-Reads `SHOPWARE_SHOP_ID` from local `.env`. Default remote root:
+Reads `SHOPWARE_SHOP_ID` from local `.env`. Laptop SSH: `SHOPWARE_SSH_*` in `.env.local`. Default remote root:
 
 `/var/lib/shopware/data/${SHOPWARE_SHOP_ID}/live`
 
-Override with `--remote-data-root` / `SYNC_REMOTE_DATA_ROOT` / `SYNC_SOURCE_ENV`. Requires `SHOPWARE_SHOP_ID` unless an explicit remote root is set.
+Override with `--remote-data-root` / `SHOPWARE_REMOTE_DATA_ROOT`. Requires `SHOPWARE_SHOP_ID` unless an explicit remote root is set.
 
-Default SSH host alias is `live` (`--from` / `SYNC_SSH_HOST`). `--delete` is off by default (safer on a dirty local tree). A checkout directory named `live` prints a warning so this is not confused with `fyrst-cli shopware sync pull`.
+Default SSH host alias is `live` (`--from` / `SHOPWARE_SSH_HOST`). `--delete` is off by default (safer on a dirty local tree). A checkout directory named `live` prints a warning so this is not confused with `fyrst-cli shopware sync pull`.
 
 ```bash
 fyrst-cli shopware sync local --from live --dry-run

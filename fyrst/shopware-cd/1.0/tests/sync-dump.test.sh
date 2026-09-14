@@ -39,16 +39,24 @@ if grep -q 'fyrst-cli never dumps' "$DEPLOY/sync-runtime.md" \
 else
   fail "docs missing never-dumps wording"
 fi
-if grep -q 'SYNC_DUMP_ENGINE' "$DEPLOY/sync.env.example"; then
-  fail "sync.env.example still documents SYNC_DUMP_ENGINE as consumed"
+EXAMPLE="${ROOT}/root/.env.example"
+if grep -q 'SYNC_DUMP_ENGINE' "$EXAMPLE"; then
+  fail ".env.example still documents SYNC_DUMP_ENGINE as consumed"
 else
-  pass "sync.env.example no longer ships dump-engine knobs"
+  pass ".env.example does not ship dump-engine knobs"
 fi
-if grep -q 'BACKUP_DB_DUMP' "$DEPLOY/backup.env.example"; then
-  pass "backup.env.example documents BACKUP_DB_DUMP"
+if grep -q 'BACKUP_DB_DUMP' "$EXAMPLE"; then
+  pass ".env.example documents BACKUP_DB_DUMP"
 else
-  fail "backup.env.example missing BACKUP_DB_DUMP"
+  fail ".env.example missing BACKUP_DB_DUMP"
 fi
+for s in sync.env.example backup.env.example; do
+  if [[ -e "$DEPLOY/$s" ]]; then
+    fail "$s should have been removed"
+  else
+    pass "removed $s"
+  fi
+done
 
 echo "==> capture --data db is not a dump wrap"
 if command -v fyrst-cli >/dev/null 2>&1; then

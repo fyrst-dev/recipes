@@ -36,12 +36,10 @@ $BACKUP_TARGET/$SHOPWARE_SHOP_ID/$SHOPWARE_DEPLOY_ENV/YYYYMMDDTHHMMSSZ/
 
 On the **live** VPS (unlike sync, which you configure on staging):
 
-1. Copy `deploy/backup.env.example` → `deploy/backup.env` and `chmod 600 deploy/backup.env`.
-2. Set `BACKUP_TARGET` to a **second disk** or an **SSH host** (not only a directory on the same root filesystem as `/var/lib/shopware`). Same-disk copies are better than nothing but do not survive disk loss.
-3. `SHOPWARE_SHOP_ID` + `SHOPWARE_DEPLOY_ENV=live` in shop-root `.env` (same as Compose).
+1. Set `BACKUP_TARGET` in shop-root `.env` / `.env.prod` to a **second disk** or an **SSH host** (not only a directory on the same root filesystem as `/var/lib/shopware`). Same-disk copies are better than nothing but do not survive disk loss. Default is `local`.
+2. `SHOPWARE_SHOP_ID` + `SHOPWARE_DEPLOY_ENV=live` in shop-root `.env` (same as Compose).
+3. Reuse `SHOPWARE_SSH_*` when `BACKUP_TARGET` is SSH.
 4. Install **fyrst-cli 0.1.0+**. Dump with shopware-cli yourself and set `BACKUP_DB_DUMP` when `--data` includes db. Shop-root `.env` still needs `IMAGE` for compose interpolation.
-
-Do not commit `deploy/backup.env`.
 
 ## Commands
 
@@ -72,21 +70,21 @@ Overlapping runs are blocked with `flock` on `var/backup-runtime.lock`.
 
 ## Restore drill (quarterly)
 
-Do this on **staging** first (every quarter). Live disaster recovery is the same commands plus `BACKUP_ALLOW_LIVE_RESTORE=1`.
+Do this on **staging** first (every quarter). Live disaster recovery is the same commands plus `SHOPWARE_ALLOW_LIVE_RESTORE=1`.
 
 1. Pick an artifact stamp from `$BACKUP_TARGET/<shop>/staging/` (or copy a live artifact to the staging host).
 2. `fyrst-cli shopware backup recover --from <stamp> --i-understand-this-restores-this-host`
-3. Confirm storefront/admin, then rewrite `sales_channel_domain` if the dump still has live URLs. On staging, `SYNC_REWRITE_APP_URL` (or `SYNC_REWRITE_URL_MAP`) in `deploy/sync.env` runs `bin/console fyrst:sales-channel:rewrite-urls` after restore; it is refused on live. Payment/shipping webhooks still need a manual check.
+3. Confirm storefront/admin, then rewrite `sales_channel_domain` if the dump still has live URLs. On staging, `APP_URL` in shop-root `.env` runs `bin/console fyrst:sales-channel:rewrite-urls` after restore; it is refused on live. Payment/shipping webhooks still need a manual check.
 4. Record the date on the ClickUp Secrets & checklist page.
 
 Live DR (only when live is already broken):
 
 ```bash
-BACKUP_ALLOW_LIVE_RESTORE=1 fyrst-cli shopware backup recover --from <stamp> \
+SHOPWARE_ALLOW_LIVE_RESTORE=1 fyrst-cli shopware backup recover --from <stamp> \
   --i-understand-this-restores-this-host
 ```
 
-That sets `SYNC_ALLOW_LIVE_RESTORE=1` for the inner apply (`fyrst-cli shopware sync apply`). Sync still refuses live without that override. Inner apply imports `db.sql.gz` / `db.sql` and restores bind-mount trees — it does not dump.
+That is the same live gate for the inner apply (`fyrst-cli shopware sync apply`). Sync still refuses live without that override. Inner apply imports `db.sql.gz` / `db.sql` and restores bind-mount trees — it does not dump.
 
 After a live restore, run `IMAGE_TAG=$(cat .deployed-tag) fyrst-cli shopware deploy release` only if the running image tag no longer matches the dump; usually the image is fine and only data was restored.
 

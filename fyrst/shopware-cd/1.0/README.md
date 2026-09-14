@@ -8,7 +8,7 @@ Overlays for Packagist package [`fyrst/shopware-cd`](https://github.com/fyrst-de
 |---|---|
 | `compose.yaml`, `.gitignore`, `.shopware-project.yml` (create’s default; `.yaml` also accepted — do not rename) | `shopware-cli project create` / the CLI — **not** this recipe |
 | `docker/Dockerfile` | `shopware/docker` (required in the same `composer require`) |
-| `.github/workflows/cd.yaml`, `.gitlab-ci.yaml`, `deploy/` (Compose + edge + env examples), `.dockerignore`, `.env.example` | this recipe. Operators run [fyrst-cli](https://github.com/fyrst-dev/cli) 0.1.0+ (install on each VPS). Dump stays `shopware-cli`. Create / image build stay out of this recipe. |
+| `.github/workflows/cd.yaml`, `.gitlab-ci.yaml`, `deploy/` (Compose + edge), `.dockerignore`, `.env.example` | this recipe. Operators run [fyrst-cli](https://github.com/fyrst-dev/cli) 0.1.0+ (install on each VPS). Dump stays `shopware-cli`. Create / image build stay out of this recipe. |
 
 **Local:** `shopware-cli project dev` and the CLI-managed shop-root `compose.yaml`.
 

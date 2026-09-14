@@ -28,8 +28,13 @@ fi
 
 echo "==> named files"
 assert_file "$DEPLOY/backup-runtime.md"
-assert_file "$DEPLOY/backup.env.example"
+assert_file "$ROOT/root/.env.example"
 assert_file "$DEPLOY/edge/Caddyfile"
+if [[ -e "$DEPLOY/backup.env.example" || -e "$DEPLOY/sync.env.example" ]]; then
+  fail "deploy still ships sync.env.example or backup.env.example"
+else
+  pass "deploy does not ship sync.env.example / backup.env.example"
+fi
 assert_file "$DEPLOY/edge/README.md"
 assert_file "$DEPLOY/compose.yaml"
 for s in init-env.sh vps-release.sh vps-rollback.sh sync-runtime.sh \

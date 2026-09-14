@@ -109,11 +109,12 @@
     Flex registers
     <comment>Fyrst\ShopwareCd\FyrstShopwareCdBundle</comment>
     in <comment>config/bundles.php</comment>.
-    Opt-in post-restore sales-channel URL rewrite:
-    set <comment>SYNC_REWRITE_APP_URL</comment> or
-    <comment>SYNC_REWRITE_URL_MAP</comment> in
-    <comment>deploy/sync.env</comment>; sync calls
+    Post-restore sales-channel URL rewrite uses
+    <comment>APP_URL</comment> in shop-root <comment>.env</comment>;
+    sync calls
     <comment>bin/console fyrst:sales-channel:rewrite-urls</comment>.
+    Laptop SSH (<comment>SHOPWARE_SSH_*</comment>) belongs in
+    <comment>.env.local</comment>.
     Shops need <comment>composer update fyrst/shopware-cd</comment>
     so the command and bundle exist, then
     <comment>composer recipes:update fyrst/shopware-cd</comment>.

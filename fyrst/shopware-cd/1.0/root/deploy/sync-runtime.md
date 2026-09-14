@@ -17,7 +17,7 @@ This is **not** part of image CD. `fyrst-cli shopware deploy release` still pull
 
 Object storage (S3 and similar) is **out of scope** for this VPS path. Transfer is SSH + **rsync of bind-mount directories** under `SHOPWARE_DATA_ROOT`. **Dump is operator-run `shopware-cli project dump`** — fyrst-cli never dumps. Named-volume docker-tar is only a fallback if those directories are missing. Restore uses `fyrst-cli shopware db import` (MySQL/MariaDB client).
 
-After recipe updates: `composer recipes:update fyrst/shopware-cd`, then `fyrst-cli shopware env init` (or merge new `.env.example` keys (`SHOPWARE_SHOP_ID`, `SHOPWARE_DEPLOY_ENV`, optional `SHOPWARE_DATA_BASE`) into each environment's `.env` by hand). `COMPOSE_PROJECT_NAME` / `SHOPWARE_DATA_ROOT` are optional overrides — Compose does not require them.
+After recipe updates: `composer recipes:update fyrst/shopware-cd`, then `fyrst-cli shopware env init` (or merge new `.env.example` keys (`SHOPWARE_SHOP_ID`, `SHOPWARE_DEPLOY_ENV`, optional `SHOPWARE_DATA_BASE`) into each environment's `.env` by hand). fyrst-cli loads `.env` then `.env.local` then `.env.prod`. `COMPOSE_PROJECT_NAME` / `SHOPWARE_DATA_ROOT` are optional overrides — Compose does not require them.
 
 ## Bind mounts (per shop + env)
 
@@ -61,7 +61,7 @@ chown -R 82:82 "${DATA}"
 
 (`82` is www-data in `shopware/docker-base`. `deploy/compose.yaml` `init-perm` chowns the same mount points on setup.)
 
-When `SHOPWARE_DATA_ROOT` / `SYNC_DATA_ROOT` are unset, fyrst-cli derives `$SHOPWARE_DATA_BASE/$SHOPWARE_SHOP_ID/$SHOPWARE_DEPLOY_ENV` (same path Compose mounts). `--from live` uses `$BASE/$SHOPWARE_SHOP_ID/${SYNC_SOURCE_ENV:-live}` unless `SYNC_REMOTE_DATA_ROOT` is set. Missing `SHOPWARE_SHOP_ID` is refused.
+When `SHOPWARE_DATA_ROOT` is unset, fyrst-cli derives `$SHOPWARE_DATA_BASE/$SHOPWARE_SHOP_ID/$SHOPWARE_DEPLOY_ENV` (same path Compose mounts). `--from live` uses `$BASE/$SHOPWARE_SHOP_ID/live` unless `SHOPWARE_REMOTE_DATA_ROOT` is set. Missing `SHOPWARE_SHOP_ID` is refused.
 
 ## What is copied
 
@@ -93,15 +93,13 @@ The SSH user must be able to run `docker` (typically the `docker` group). Direct
 On staging (or playground/dev), not on live:
 
 1. Create the bind-mount dirs as above. Set `SHOPWARE_SHOP_ID` and `SHOPWARE_DEPLOY_ENV` in `.env` (optional `SHOPWARE_DATA_BASE`). Compose does not need `COMPOSE_PROJECT_NAME` / `SHOPWARE_DATA_ROOT`.
-2. Copy `deploy/sync.env.example` → `deploy/sync.env` and `chmod 600 deploy/sync.env`.
-3. Set `SYNC_ENV=staging` (or `playground` / `dev`). **Never** set `SYNC_ENV=live` or `SHOPWARE_DEPLOY_ENV=live` on a host you restore onto.
-4. Fill `SYNC_SSH_*` and `SYNC_REMOTE_PATH` for the source (live checkout, e.g. `/opt/shopware/acme-live`). `SYNC_DATA_ROOT` / `SYNC_REMOTE_DATA_ROOT` only if they differ from the derived `$BASE/$SHOPWARE_SHOP_ID/<env>` paths. Optional: `SYNC_SOURCE_ENV=live`.
+2. Set `SHOPWARE_SSH_HOST` / `SHOPWARE_SSH_USER` / `SHOPWARE_SSH_KEY` in shop-root `.env` (or `.env.local` on a laptop). Host defaults to the sync alias (`live` → `~/.ssh/config` `Host live`) when unset.
+3. **Never** set `SHOPWARE_DEPLOY_ENV=live` on a host you restore onto.
+4. Set `SHOPWARE_REMOTE_DATA_ROOT` only if the live tree is not `$BASE/$SHOPWARE_SHOP_ID/live`.
 5. Install an SSH key that can log in to live **without a passphrase** (cron). Pin `known_hosts`.
 6. Confirm shop-root `.env` has `IMAGE` (compose interpolation; same as release). fyrst-cli does not read secrets from this document.
 
-Do not commit `deploy/sync.env` (add it to the shop `.gitignore`; that file is owned by `shopware-cli project create`).
-
-Live should still have `SYNC_ENV=live` and `SHOPWARE_DEPLOY_ENV=live` in its own env files if they exist, so a mistaken `apply`/`pull` on live is refused. Volume capture on live is allowed. Live disaster restore is `BACKUP_ALLOW_LIVE_RESTORE=1` on backup recover, not a normal sync.
+Live should still have `SHOPWARE_DEPLOY_ENV=live` in its own `.env` / `.env.prod` if they exist, so a mistaken `apply`/`pull` on live is refused. Volume capture on live is allowed. Live disaster restore is `SHOPWARE_ALLOW_LIVE_RESTORE=1` on backup recover, not a normal sync.
 
 ## Commands
 
@@ -128,7 +126,7 @@ Flags:
 
 | Flag | Meaning |
 | --- | --- |
-| `--from <alias>` | `local` or SSH source. `--from live` uses `SYNC_SSH_*` / `SYNC_LIVE_*` / ssh `Host live` |
+| `--from <alias>` | `local` or SSH source. `--from live` uses `SHOPWARE_SSH_*` / ssh `Host live` |
 | `--data <list>\|all` | `db,media,files,thumbnail,theme,sitemap` (`sync local` refuses `all`) |
 | `--snapshot-dir <dir>` | Default `<shop>/var/runtime-sync` (Shopware `/var` is gitignored) |
 | `--dry-run` | Log actions only |
@@ -156,14 +154,11 @@ Overlapping runs are blocked with `flock` on `var/runtime-sync.lock`.
 
 - fyrst-cli tries `bin/console cache:clear` via compose `web` and **does not fail the sync** if that errors.
 - **Sales-channel domains are not rewritten unless you opt in.** Default behaviour is unchanged: the restored DB still has the source (usually live) `sales_channel_domain.url` rows.
-- **Opt-in rewrite** (staging / playground / dev only — **hard-refused on live**, including `SYNC_ALLOW_LIVE_RESTORE=1`):
+- **Opt-in rewrite** (staging / playground / dev only — **hard-refused on live**, including `SHOPWARE_ALLOW_LIVE_RESTORE=1`):
 
   ```bash
   # replace scheme+host(+port) on every sales_channel_domain.url; keep the path
-  SYNC_REWRITE_APP_URL=https://staging.example.com
-
-  # or a 1:1 prefix map (longest match first) when shops have several origins
-  # SYNC_REWRITE_URL_MAP=https://shop.example.com=https://staging.example.com,https://b2b.example.com=https://b2b.staging.example.com
+  APP_URL=https://staging.example.com
   ```
 
   After the DB restore, sync calls `bin/console fyrst:sales-channel:rewrite-urls` via compose `web` (same `run --rm --pull never --entrypoint php` style as `cache:clear`). Shops need a current `fyrst/shopware-cd` so that command and `FyrstShopwareCdBundle` exist:
@@ -173,12 +168,12 @@ Overlapping runs are blocked with `flock` on `var/runtime-sync.lock`.
   composer recipes:update fyrst/shopware-cd
   ```
 
-  (`recipes:update` writes `Fyrst\ShopwareCd\FyrstShopwareCdBundle` into `config/bundles.php`.) The command updates `sales_channel_domain.url` only. It does **not** half-update media CDN, plugin `system_config`, or payment/shipping webhook URLs — those still need **manual review**. Optional: `SYNC_POST_RESTORE_CMD` for a shop-specific extra hook (non-fatal).
-- Without the rewrite env, set `SYNC_APP_URL` (or rely on `APP_URL` in `.env`) so the log prints the destination URL if you rewrite in admin yourself.
+  (`recipes:update` writes `Fyrst\ShopwareCd\FyrstShopwareCdBundle` into `config/bundles.php`.) The command updates `sales_channel_domain.url` only. It does **not** half-update media CDN, plugin `system_config`, or payment/shipping webhook URLs — those still need **manual review**.
+- Without rewrite, `APP_URL` in `.env` is still the destination reminder if you rewrite in admin yourself.
 
 ## Safety
 
-- Apply and pull **refuse** when `SYNC_ENV=live`, `SHOPWARE_DEPLOY_ENV=live`, or the checkout directory is named `live` (e.g. `/opt/shopware/live`).
+- Apply and pull **refuse** when `SHOPWARE_DEPLOY_ENV=live`, or the checkout directory is named `live` (e.g. `/opt/shopware/live`).
 - Convention is pull-only: never “push” onto live.
 - Dumps contain customer data: `umask 077` on the snapshot directory.
 
@@ -196,4 +191,4 @@ If `$SHOPWARE_DATA_ROOT/<item>` does not exist but a leftover compose volume `${
 
 `/var/lib/shopware/data/${SHOPWARE_SHOP_ID}/live`
 
-(override with `--remote-data-root` / `SYNC_REMOTE_DATA_ROOT` / `SYNC_SOURCE_ENV`). Destinations stay in the project tree (`./public/media/`, `./files/`, …). Requires `SHOPWARE_SHOP_ID` unless an explicit remote root is set. `--data all` is refused.
+(override with `--remote-data-root` / `SHOPWARE_REMOTE_DATA_ROOT`). Destinations stay in the project tree (`./public/media/`, `./files/`, …). Requires `SHOPWARE_SHOP_ID` unless an explicit remote root is set. `--data all` is refused.
