@@ -50,12 +50,24 @@ else
   fail "post-install dropped rewrite command"
 fi
 
-if grep -q 'never dump' "$DEPLOY/sync-runtime.sh" \
-  && grep -q 'shopware sync apply' "$DEPLOY/sync-runtime.sh"; then
+echo "==> restore dispatches sync apply (FYRST_CLI mock)"
+TMP="$(mktemp -d)"
+MOCK="$TMP/fyrst-cli"
+ARGV="$TMP/argv"
+cat >"$MOCK" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$@" >"${FYRST_CLI_ARGV:?}"
+EOF
+chmod +x "$MOCK"
+FYRST_CLI="$MOCK" FYRST_CLI_ARGV="$ARGV" COMPOSE_DIR="$TMP" \
+  bash "$DEPLOY/sync-runtime.sh" restore --snapshot-dir "$TMP" --dry-run >/dev/null 2>&1
+got="$(tr '\n' ' ' <"$ARGV" | sed 's/[[:space:]]*$//')"
+if [[ "$got" == "shopware sync apply --snapshot-dir $TMP --dry-run" ]]; then
   pass "sync wrapper still the apply path (rewrite happens in fyrst-cli)"
 else
-  fail "sync wrapper missing apply mapping"
+  fail "sync wrapper missing apply mapping (got='$got')"
 fi
+rm -rf "$TMP"
 
 if [[ "$FAILS" -ne 0 ]]; then
   printf '\n%d check(s) failed\n' "$FAILS" >&2

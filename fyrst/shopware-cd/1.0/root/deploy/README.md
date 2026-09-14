@@ -28,7 +28,8 @@
 
 ## fyrst-cli (required on each VPS / laptop)
 
-`deploy/*.sh` copied into the shop are **thin wrappers**. They exec
+`deploy/*.sh` copied into the shop are **thin stubs** around one dispatcher
+(`deploy/lib/dispatch.sh`); operator filenames are unchanged. They exec
 [fyrst-cli](https://github.com/fyrst-dev/cli) 0.1.0+. Install once per host:
 
 ```bash

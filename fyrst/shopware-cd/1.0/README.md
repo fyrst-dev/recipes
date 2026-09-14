@@ -20,7 +20,7 @@ Live Compose profiles: uncomment `COMPOSE_PROFILES=redis,worker,scheduler` in `.
 docker compose --env-file .env -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/compose.vps.yaml
 ```
 
-(`deploy/vps-release.sh` / `deploy/vps-rollback.sh` are thin wrappers for `fyrst-cli shopware deploy {release|rollback}`. CI still runs `bash ./deploy/vps-release.sh`.)
+(`deploy/vps-release.sh` / `deploy/vps-rollback.sh` are thin wrappers for `fyrst-cli shopware deploy {release|rollback}`. CI still runs `bash ./deploy/vps-release.sh`. Implementation is a dispatcher; operator filenames are unchanged.)
 
 Flex `env` may append a `###> fyrst/shopware-cd ###` block to shop-root `.env` (empty `SHOPWARE_SHOP_ID`, `SHOPWARE_DEPLOY_ENV=live`, `SHOPWARE_DATA_BASE=/var/lib/shopware/data`). It does not overwrite create’s whole `.env`. Then run `bash deploy/init-env.sh --shop-id <slug>` (execs `fyrst-cli shopware env init`; see `deploy/README.md`). Each VPS needs fyrst-cli 0.1.0+.
 
