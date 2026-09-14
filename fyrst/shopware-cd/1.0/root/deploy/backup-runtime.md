@@ -2,7 +2,7 @@
 
 **`deploy/sync-runtime.sh` is not a backup.** Sync clones live → staging/playground/dev. It refuses to restore onto live. Live MySQL (`mysql_data` named volume) and bind mounts under the derived data root sit on the **same VPS disk** as the checkout. Disk loss or a bad restore-from-live onto the wrong host is not covered by sync.
 
-This file is the **backup** path: timestamped artifacts on another disk or another host, with retention, checksums, and a restore drill.
+This file is the **backup** path: timestamped artifacts on another disk or another host, with retention, checksums, and a restore drill. `deploy/backup-runtime.sh` is a thin wrapper (`backup` → `fyrst-cli shopware backup create`, `prune` → `prune`, `restore` → `recover`). Install fyrst-cli 0.1.0+ on live.
 
 Non-goals: WAL shipping / PITR, S3.
 
@@ -12,7 +12,7 @@ Same trees as sync `--data all`:
 
 | Item | Mechanism |
 | --- | --- |
-| `db` | Logical SQL dump via `shopware-cli project dump` (same as sync: pinned `ghcr.io/shopware/shopware-cli:0.18.4` one-shot on the Compose network, or `DATABASE_URL`). Restore is still MySQL/MariaDB client import. |
+| `db` | Operator-run `shopware-cli project dump`. Set `BACKUP_DB_DUMP` to that `db.sql.gz`. fyrst-cli never dumps. Restore is `fyrst-cli shopware db import`. |
 | `media` `files` `thumbnail` `theme` `sitemap` | Bind-mount trees under `$SHOPWARE_DATA_BASE/$SHOPWARE_SHOP_ID/$SHOPWARE_DEPLOY_ENV` |
 
 Layout on `BACKUP_TARGET`:
@@ -33,7 +33,7 @@ On the **live** VPS (unlike sync, which you configure on staging):
 1. Copy `deploy/backup.env.example` → `deploy/backup.env` and `chmod 600 deploy/backup.env`.
 2. Set `BACKUP_TARGET` to a **second disk** or an **SSH host** (not only a directory on the same root filesystem as `/var/lib/shopware`). Same-disk copies are better than nothing but do not survive disk loss.
 3. `SHOPWARE_SHOP_ID` + `SHOPWARE_DEPLOY_ENV=live` in shop-root `.env` (same as Compose).
-4. Shop-root `.env` still needs `IMAGE` (snapshot interpolates compose). First dump also needs to **pull** `ghcr.io/shopware/shopware-cli:0.18.4` (or `SYNC_SHOPWARE_CLI_IMAGE`). Dump flags (`SYNC_DUMP_CLEAN`, `SYNC_DUMP_ANONYMIZE`, …) are read from the environment / `deploy/sync.env` / this file.
+4. Install **fyrst-cli 0.1.0+**. Dump with shopware-cli yourself and set `BACKUP_DB_DUMP` when `--data` includes db. Shop-root `.env` still needs `IMAGE` for compose interpolation.
 
 Do not commit `deploy/backup.env`.
 
@@ -80,7 +80,7 @@ BACKUP_ALLOW_LIVE_RESTORE=1 bash deploy/backup-runtime.sh restore --from <stamp>
   --i-understand-this-restores-this-host
 ```
 
-That sets `SYNC_ALLOW_LIVE_RESTORE=1` for `deploy/sync-runtime.sh restore` (sync still refuses live without that override). Restore reuses sync's dump/bind-mount restore helpers.
+That sets `SYNC_ALLOW_LIVE_RESTORE=1` for the inner apply (`fyrst-cli shopware sync apply`). Sync still refuses live without that override. Inner apply imports `db.sql.gz` / `db.sql` and restores bind-mount trees — it does not dump.
 
 After a live restore, run `IMAGE_TAG=$(cat .deployed-tag) bash deploy/vps-release.sh` only if the running image tag no longer matches the dump; usually the image is fine and only data was restored.
 

@@ -57,10 +57,10 @@ composer require shopware/docker shopware/deployment-helper fyrst/shopware-cd
 
 `shopware-cli project create` owns `compose.yaml`, `.gitignore`, and `.shopware-project.yml` (create’s default; `.yaml` is also accepted — do not rename). This recipe does **not** copy them.
 
-- **Local:** `shopware-cli project dev` and the CLI-managed shop-root `compose.yaml`. Live → laptop uploads: `deploy/sync-runtime-local.sh`.
-- **VPS/CD:** files under `deploy/` (`deploy/compose.yaml`, `deploy/compose.prod.yaml`, `deploy/compose.vps.yaml`, `deploy/vps-release.sh`, `deploy/vps-rollback.sh`, `deploy/backup-runtime.sh`, `deploy/sync-runtime.sh`, `deploy/edge/`).
+- **Local:** `shopware-cli project dev` and the CLI-managed shop-root `compose.yaml`. Live → laptop uploads: `deploy/sync-runtime-local.sh` → `fyrst-cli shopware sync local`.
+- **VPS/CD:** files under `deploy/` (Compose templates, thin `*.sh` wrappers that exec [fyrst-cli](https://github.com/fyrst-dev/cli) 0.1.0+, `deploy/edge/`). CI still runs `bash ./deploy/vps-release.sh`. Dump stays `shopware-cli project dump`. Create and image build stay out of this recipe.
 
-Flex copies CI, `deploy/` (including CD Compose), `.dockerignore`, and `.env.example` into the shop root. The Flex `env` configurator may append a `###> fyrst/shopware-cd ###` block to `.env` (empty shop id, `SHOPWARE_DEPLOY_ENV=live`, `SHOPWARE_DATA_BASE=/var/lib/shopware/data`). It does not overwrite create’s whole `.env` and does not put secrets in that block. Then run `bash deploy/init-env.sh --shop-id <slug>` (VPS: add `--vps`; see `deploy/README.md`). Commit the copied files; `vendor/` stays gitignored.
+Flex copies CI, `deploy/` (including CD Compose and thin wrappers), `.dockerignore`, and `.env.example` into the shop root. The Flex `env` configurator may append a `###> fyrst/shopware-cd ###` block to `.env` (empty shop id, `SHOPWARE_DEPLOY_ENV=live`, `SHOPWARE_DATA_BASE=/var/lib/shopware/data`). It does not overwrite create’s whole `.env` and does not put secrets in that block. Then run `bash deploy/init-env.sh --shop-id <slug>` (execs `fyrst-cli shopware env init`; VPS: add `--vps`; see `deploy/README.md`). Each VPS needs fyrst-cli 0.1.0+. Commit the copied files; `vendor/` stays gitignored.
 
 ## Update recipes
 
@@ -87,7 +87,7 @@ composer recipes:update fyrst/shopware-cd
 
 | Path | Role |
 |---|---|
-| `fyrst/shopware-cd/1.0/` | Current Flex recipe for Packagist package `fyrst/shopware-cd` (overlays live only here; Packagist package repo is https://github.com/fyrst-dev/shopware-cd). Ships CI, `deploy/` (CD Compose, including `deploy/init-env.sh`), `.dockerignore`, `.env.example`. Flex `env` appends safe SoT keys to `.env`. Does not copy `compose.yaml`, `.gitignore`, or `.shopware-project.yml` / `.yaml` (`shopware-cli project create` / CLI). |
+| `fyrst/shopware-cd/1.0/` | Current Flex recipe for Packagist package `fyrst/shopware-cd` (overlays live only here; Packagist package repo is https://github.com/fyrst-dev/shopware-cd). Ships CI, `deploy/` (CD Compose + thin fyrst-cli wrappers), `.dockerignore`, `.env.example`. Flex `env` appends safe SoT keys to `.env`. Does not copy `compose.yaml`, `.gitignore`, or `.shopware-project.yml` / `.yaml` (`shopware-cli project create` / CLI). Does not own create, image build, or dump. |
 | `.github/workflows/flex-update.yml` | Compiles recipes → `flex/main` |
 | `.github/workflows/flex-cleanup.yml` | Deletes Flex PR test refs |
 

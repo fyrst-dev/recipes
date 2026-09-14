@@ -16,13 +16,19 @@
     (<comment>deploy/compose.yaml</comment>, <comment>deploy/compose.prod.yaml</comment>,
     <comment>deploy/compose.vps.yaml</comment>).
     Runtime DB/bind-mount copy between VPS hosts:
-    <comment>deploy/sync-runtime.sh</comment> (see <comment>deploy/sync-runtime.md</comment>).
+    <comment>deploy/sync-runtime.sh</comment> (thin wrapper →
+    <comment>fyrst-cli shopware sync</comment>; see <comment>deploy/sync-runtime.md</comment>).
     DB snapshots use <comment>shopware-cli project dump</comment>
-    (<comment>ghcr.io/shopware/shopware-cli:0.18.4</comment> one-shot; restore is still mysql).
+    (fyrst-cli and these wrappers never dump; restore is
+    <comment>fyrst-cli shopware db import</comment>).
     Live backups (not sync): <comment>deploy/backup-runtime.sh</comment>
+    → <comment>fyrst-cli shopware backup</comment>
     (see <comment>deploy/backup-runtime.md</comment>).
     Rollback: <comment>deploy/vps-rollback.sh</comment>
     (<comment>IMAGE_TAG=$(cat .previous-tag) bash deploy/vps-rollback.sh</comment>).
+    Each VPS needs <comment>fyrst-cli</comment> 0.1.0+
+    (<comment>https://github.com/fyrst-dev/cli</comment>).
+    CI still runs <comment>bash ./deploy/vps-release.sh</comment>.
     TLS edge: <comment>deploy/edge/Caddyfile</comment>.
     Live → local project dev rsync (no DB): <comment>deploy/sync-runtime-local.sh</comment>
     (reads <comment>SHOPWARE_SHOP_ID</comment> from local <comment>.env</comment>;
@@ -35,7 +41,8 @@
     It does not overwrite create’s whole <comment>.env</comment>
     and does not put secrets in that block. Then run
     <comment>bash deploy/init-env.sh --shop-id …</comment>
-    (see <comment>deploy/README</comment>).
+    (execs <comment>fyrst-cli shopware env init</comment>;
+    see <comment>deploy/README</comment>).
     VPS <comment>.env</comment> source of truth (required):
     <comment>SHOPWARE_SHOP_ID</comment> (same slug on live + staging + laptop),
     <comment>SHOPWARE_DEPLOY_ENV</comment> (live|staging|playground|dev).
