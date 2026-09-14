@@ -5,35 +5,28 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-DEPLOY="${ROOT}/root/deploy"
+# shellcheck source=fixtures.sh
+source "$(dirname "$0")/fixtures.sh"
 FAILS=0
 
 pass() { printf 'ok  %s\n' "$*"; }
 fail() { printf 'FAIL %s\n' "$*" >&2; FAILS=$((FAILS + 1)); }
 
-if ! command -v fyrst-cli >/dev/null 2>&1; then
-  printf 'FAIL fyrst-cli 0.1.0+ is required. Install:\n' >&2
-  printf '  curl -fsSL https://raw.githubusercontent.com/fyrst-dev/cli/main/scripts/install.sh | bash\n' >&2
-  exit 1
-fi
+require_fyrst_cli
 
-echo "==> docs keep cron + dump ownership"
-if grep -q 'fyrst-cli shopware sync pull --from live --data all' "$DEPLOY/sync-runtime.md" \
-  && grep -q 'shopware-cli project dump' "$DEPLOY/sync-runtime.md" \
-  && grep -q 'fyrst-cli never dumps' "$DEPLOY/sync-runtime.md"; then
-  pass "sync-runtime.md documents fyrst-cli cron + shopware-cli dump"
+echo "==> recipe docs keep cron + dump ownership"
+if grep -q 'fyrst-cli shopware sync pull' "$ROOT/post-install.txt" \
+  && grep -q 'shopware-cli project dump' "$ROOT/post-install.txt" \
+  && grep -q 'never dumps' "$ROOT/post-install.txt"; then
+  pass "post-install documents fyrst-cli sync + shopware-cli dump"
 else
-  fail "sync-runtime.md missing fyrst-cli/dump contract"
+  fail "post-install missing fyrst-cli/dump contract"
 fi
-if grep -q 'fyrst-cli shopware sync' "$DEPLOY/sync-runtime.md"; then
-  pass "sync-runtime.md names fyrst-cli verbs"
+if grep -q 'bash deploy/sync-runtime.sh' "$ROOT/post-install.txt" \
+  || grep -q 'bash deploy/sync-runtime.sh' "$ROOT/README.md"; then
+  fail "recipe docs still document bash deploy/sync-runtime.sh"
 else
-  fail "sync-runtime.md missing fyrst-cli verb map"
-fi
-if grep -q 'bash deploy/sync-runtime.sh' "$DEPLOY/sync-runtime.md"; then
-  fail "sync-runtime.md still documents bash deploy/sync-runtime.sh"
-else
-  pass "sync-runtime.md does not use overlay script names as the operator path"
+  pass "recipe docs do not use overlay script names as the operator path"
 fi
 
 echo "==> fyrst-cli help uses lifecycle verbs"
@@ -53,8 +46,8 @@ echo "==> live refuse via fyrst-cli shopware sync apply"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 SHOP="$TMP/acme-live"
-mkdir -p "$SHOP/deploy" "$SHOP/var/runtime-sync"
-cp "$DEPLOY/compose.yaml" "$DEPLOY/compose.prod.yaml" "$DEPLOY/compose.vps.yaml" "$SHOP/deploy/"
+write_stub_compose "$SHOP"
+mkdir -p "$SHOP/var/runtime-sync"
 cat >"$SHOP/.env" <<'EOF'
 IMAGE=ghcr.io/example/acme
 IMAGE_TAG=tag-b

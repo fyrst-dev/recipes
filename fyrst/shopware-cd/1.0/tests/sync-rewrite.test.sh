@@ -1,19 +1,18 @@
 #!/usr/bin/env bash
 # Rewrite stays fyrst:sales-channel:rewrite-urls (shopware-cd package).
-# Overlay does not rewrite in bash; fyrst-cli shopware sync apply owns the path.
+# Recipe does not rewrite in bash; fyrst-cli shopware sync apply owns the path.
 #   bash fyrst/shopware-cd/1.0/tests/sync-rewrite.test.sh
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-DEPLOY="${ROOT}/root/deploy"
 FAILS=0
 
 pass() { printf 'ok  %s\n' "$*"; }
 fail() { printf 'FAIL %s\n' "$*" >&2; FAILS=$((FAILS + 1)); }
 
-echo "==> no bash rewrite helper"
-if [[ -e "$DEPLOY/lib/sync-rewrite.sh" ]]; then
+echo "==> no bash rewrite helper in this recipe"
+if [[ -e "$ROOT/root/deploy/lib/sync-rewrite.sh" || -e "$ROOT/deploy/lib/sync-rewrite.sh" ]]; then
   fail "lib/sync-rewrite.sh should have been removed"
 else
   pass "lib/sync-rewrite.sh is gone"
@@ -23,30 +22,15 @@ echo "==> docs keep APP_URL rewrite + live refuse"
 for needle in \
   'APP_URL' \
   'fyrst:sales-channel:rewrite-urls' \
-  'impossible on live' \
-  'hard-refused'
+  'FyrstShopwareCdBundle'
 do
-  if grep -q "$needle" "$DEPLOY/sync-runtime.md" \
-    || grep -q "$needle" "$DEPLOY/README.md" \
-    || grep -q "$needle" "$ROOT/post-install.txt"; then
+  if grep -q "$needle" "$ROOT/post-install.txt" \
+    || grep -q "$needle" "$ROOT/README.md"; then
     pass "docs mention ${needle}"
   else
     fail "docs missing ${needle}"
   fi
 done
-
-EXAMPLE="${ROOT}/root/.env.example"
-if grep -q 'APP_URL' "$EXAMPLE" \
-  && grep -q 'fyrst-cli shopware sync rewrite' "$EXAMPLE"; then
-  pass ".env.example documents APP_URL rewrite"
-else
-  fail ".env.example missing APP_URL rewrite"
-fi
-if [[ -e "$DEPLOY/sync.env.example" ]]; then
-  fail "sync.env.example should have been removed"
-else
-  pass "sync.env.example is gone"
-fi
 
 if grep -q 'FyrstShopwareCdBundle' "$ROOT/post-install.txt" \
   && grep -q 'fyrst:sales-channel:rewrite-urls' "$ROOT/post-install.txt"; then

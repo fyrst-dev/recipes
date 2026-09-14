@@ -6,14 +6,11 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-EXAMPLE="${ROOT}/root/.env.example"
+# shellcheck source=fixtures.sh
+source "$(dirname "$0")/fixtures.sh"
 FAILS=0
 
-if ! command -v fyrst-cli >/dev/null 2>&1; then
-  printf 'FAIL fyrst-cli 0.1.0+ is required. Install:\n' >&2
-  printf '  curl -fsSL https://raw.githubusercontent.com/fyrst-dev/cli/main/scripts/install.sh | bash\n' >&2
-  exit 1
-fi
+require_fyrst_cli
 
 pass() { printf 'ok  %s\n' "$*"; }
 fail() { printf 'FAIL %s\n' "$*" >&2; FAILS=$((FAILS + 1)); }
@@ -31,14 +28,15 @@ else
   fail "--help rc=$rc out=$out"
 fi
 
-echo "==> manifest Flex env (safe defaults)"
+echo "==> manifest Flex env (safe defaults) + copy-from-package"
 MANIFEST="${ROOT}/manifest.json"
 if python3 - "$MANIFEST" <<'PY'
 import json, sys
 m = json.load(open(sys.argv[1]))
 env = m.get("env") or {}
 ok = (
-    "copy-from-recipe" in m
+    m.get("copy-from-package") == {"overlay/": ""}
+    and "copy-from-recipe" not in m
     and env.get("SHOPWARE_SHOP_ID") == ""
     and env.get("SHOPWARE_DEPLOY_ENV") == "live"
     and env.get("SHOPWARE_DATA_BASE") == "/var/lib/shopware/data"
@@ -46,9 +44,9 @@ ok = (
 raise SystemExit(0 if ok else 1)
 PY
 then
-  pass "manifest.json env has empty shop id + live + data base"
+  pass "manifest.json is copy-from-package + locked env defaults"
 else
-  fail "manifest.json env block is not the locked safe defaults"
+  fail "manifest.json env/copy block is not the locked thin recipe"
 fi
 
 echo "==> refuses missing .env and .env.example"
@@ -71,7 +69,7 @@ fi
 echo "==> dry-run does not write; real run merges + sets shop id + --vps"
 SHOP="$TMP/acme"
 mkdir -p "$SHOP"
-cp "$EXAMPLE" "$SHOP/.env.example"
+write_stub_env_example "$SHOP"
 cat >"$SHOP/.env" <<'EOF'
 APP_ENV=prod
 APP_URL=https://keep.example
@@ -156,7 +154,7 @@ fi
 echo "==> copy .env.example when .env is missing"
 COPY_SHOP="$TMP/copy-shop"
 mkdir -p "$COPY_SHOP"
-cp "$EXAMPLE" "$COPY_SHOP/.env.example"
+write_stub_env_example "$COPY_SHOP"
 set +e
 out="$(COMPOSE_DIR="$COPY_SHOP" fyrst-cli shopware env init --shop-id widgets --env staging 2>&1)"
 rc=$?
@@ -181,7 +179,7 @@ echo "==> --shop-id required when empty; invalid --env refused"
 NEED="$TMP/need-id"
 mkdir -p "$NEED"
 printf 'APP_URL=\nSHOPWARE_SHOP_ID=\n' >"$NEED/.env"
-cp "$EXAMPLE" "$NEED/.env.example"
+write_stub_env_example "$NEED"
 set +e
 out="$(COMPOSE_DIR="$NEED" fyrst-cli shopware env init 2>&1)"
 rc=$?
@@ -210,7 +208,7 @@ SHOPWARE_DEPLOY_ENV=staging
 APP_SECRET=
 APP_URL=
 EOF
-cp "$EXAMPLE" "$KEEP/.env.example"
+write_stub_env_example "$KEEP"
 set +e
 out="$(COMPOSE_DIR="$KEEP" fyrst-cli shopware env init 2>&1)"
 rc=$?

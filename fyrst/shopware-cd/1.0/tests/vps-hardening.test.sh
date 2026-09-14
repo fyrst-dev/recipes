@@ -1,126 +1,73 @@
 #!/usr/bin/env bash
 # Acceptance checks for VPS production hardening + fyrst-cli lifecycle verbs.
+# Overlay files live in the package; this recipe only keeps Flex metadata.
 # Behavioral checks need fyrst-cli 0.1.0+. No Docker required for most.
 #   bash fyrst/shopware-cd/1.0/tests/vps-hardening.test.sh
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-DEPLOY="${ROOT}/root/deploy"
+# shellcheck source=fixtures.sh
+source "$(dirname "$0")/fixtures.sh"
 FAILS=0
 
 pass() { printf 'ok  %s\n' "$*"; }
 fail() { printf 'FAIL %s\n' "$*" >&2; FAILS=$((FAILS + 1)); }
 
-assert_file() {
-  if [[ -f "$1" ]]; then
-    pass "exists $1"
-  else
-    fail "missing $1"
-  fi
-}
+require_fyrst_cli
 
-if ! command -v fyrst-cli >/dev/null 2>&1; then
-  printf 'FAIL fyrst-cli 0.1.0+ is required. Install:\n' >&2
-  printf '  curl -fsSL https://raw.githubusercontent.com/fyrst-dev/cli/main/scripts/install.sh | bash\n' >&2
-  exit 1
-fi
-
-echo "==> named files"
-assert_file "$DEPLOY/backup-runtime.md"
-assert_file "$ROOT/root/.env.example"
-assert_file "$DEPLOY/edge/Caddyfile"
-if [[ -e "$DEPLOY/backup.env.example" || -e "$DEPLOY/sync.env.example" ]]; then
-  fail "deploy still ships sync.env.example or backup.env.example"
+echo "==> thin recipe (no overlay tree, no wrappers)"
+if [[ -e "$ROOT/root" ]]; then
+  fail "root/ still present"
 else
-  pass "deploy does not ship sync.env.example / backup.env.example"
+  pass "root/ removed"
 fi
-assert_file "$DEPLOY/edge/README.md"
-assert_file "$DEPLOY/compose.yaml"
 for s in init-env.sh vps-release.sh vps-rollback.sh sync-runtime.sh \
-  sync-runtime-local.sh backup-runtime.sh lib/fyrst-cli.sh lib/dispatch.sh
+  sync-runtime-local.sh backup-runtime.sh lib/fyrst-cli.sh lib/dispatch.sh \
+  sync.env.example backup.env.example
 do
-  if [[ -e "$DEPLOY/$s" ]]; then
+  if [[ -e "$ROOT/$s" || -e "$ROOT/root/deploy/$s" ]]; then
     fail "wrapper still present $s"
   else
     pass "removed $s"
   fi
 done
-
-echo "==> healthcheck path (#14)"
-if grep -q "php -r 'exit(0);'" "$DEPLOY/compose.yaml"; then
-  fail "compose.yaml still uses php -r exit(0)"
+if compgen -G "$ROOT/*.sh" >/dev/null || [[ -d "$ROOT/deploy" ]]; then
+  fail "recipe still ships shell wrappers"
 else
-  pass "compose.yaml no longer uses php -r exit(0)"
-fi
-if grep -q 'http://127.0.0.1:8000/api/_info/health-check' "$DEPLOY/compose.yaml"; then
-  pass "compose.yaml probes /api/_info/health-check on 127.0.0.1:8000"
-else
-  fail "compose.yaml missing health path"
-fi
-if grep -q 'host.docker.internal\|network_mode: host' "$DEPLOY/compose.yaml"; then
-  fail "compose.yaml healthcheck must not depend on host network"
-else
-  pass "healthcheck has no host-network dependency"
-fi
-if grep -q 'start_period: 120s' "$DEPLOY/compose.prod.yaml"; then
-  pass "compose.prod.yaml longer start_period"
-else
-  fail "compose.prod.yaml missing longer start_period"
+  pass "no deploy/*.sh or deploy/"
 fi
 
-echo "==> prod bind (#16)"
-if grep -q 'ports: !override' "$DEPLOY/compose.prod.yaml" && grep -q '\${HTTP_BIND:-127.0.0.1}:${HTTP_PORT:-8000}:8000' "$DEPLOY/compose.prod.yaml"; then
-  pass "prod publish is loopback by default (!override)"
-else
-  fail "compose.prod.yaml does not bind 127.0.0.1 with !override"
-fi
-if grep -Fq 'ports: []' "$DEPLOY/compose.prod.yaml"; then
-  pass "mysql ports: [] in compose.prod.yaml"
-else
-  fail "mysql not unpublished in compose.prod.yaml"
-fi
-if grep -q 'shop.example.com' "$DEPLOY/edge/Caddyfile" && grep -q 'reverse_proxy 127.0.0.1:8000' "$DEPLOY/edge/Caddyfile"; then
-  pass "copy-paste Caddyfile for one hostname"
-else
-  fail "edge Caddyfile missing hostname reverse_proxy"
-fi
-
-echo "==> docs"
+echo "==> recipe docs"
 for needle in \
   'IMAGE_TAG=$(cat .previous-tag) fyrst-cli shopware deploy rollback' \
-  'ROLLBACK_ON_SMOKE_FAIL' \
-  'api/_info/health-check' \
   'fyrst-cli shopware backup' \
-  'Sync is not a backup' \
   'deploy/edge/Caddyfile' \
   'fyrst-cli'
 do
-  if grep -q "$needle" "$DEPLOY/README.md"; then
-    pass "README mentions ${needle}"
+  if grep -q "$needle" "$ROOT/post-install.txt"; then
+    pass "post-install mentions ${needle}"
   else
-    fail "README missing ${needle}"
+    fail "post-install missing ${needle}"
   fi
 done
 if grep -q 'fyrst-cli shopware deploy rollback' "$ROOT/post-install.txt" \
-  && grep -q 'fyrst-cli shopware backup' "$ROOT/post-install.txt" \
-  && grep -q 'fyrst-cli' "$ROOT/post-install.txt"; then
+  && grep -q 'fyrst-cli shopware backup' "$ROOT/post-install.txt"; then
   pass "post-install pointers"
 else
-  fail "post-install missing rollback/backup/fyrst-cli pointers"
+  fail "post-install missing rollback/backup pointers"
 fi
-if grep -qi 'not a backup' "$DEPLOY/sync-runtime.md"; then
-  pass "sync-runtime.md says sync is not a backup"
+if grep -qi 'not a backup' "$ROOT/README.md" || grep -qi 'not a backup' "$ROOT/post-install.txt"; then
+  pass "recipe docs say sync is not a backup"
 else
-  fail "sync-runtime.md missing sync ≠ backup"
+  fail "recipe docs missing sync ≠ backup"
 fi
 
 echo "==> fixture (no docker; real fyrst-cli)"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 SHOP="$TMP/acme-live"
-mkdir -p "$SHOP/deploy"
-cp "$DEPLOY/compose.yaml" "$DEPLOY/compose.prod.yaml" "$DEPLOY/compose.vps.yaml" "$SHOP/deploy/"
+write_stub_compose "$SHOP"
 cat >"$SHOP/.env" <<'EOF'
 IMAGE=ghcr.io/example/acme
 IMAGE_TAG=tag-b
@@ -223,62 +170,6 @@ else
   fail "sync live restore rc=$rc out=$out"
 fi
 
-echo "==> docker compose config (optional)"
-if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
-  CFG="$TMP/compose-cfg"
-  mkdir -p "$CFG/deploy"
-  cp "$DEPLOY/compose.yaml" "$DEPLOY/compose.prod.yaml" "$DEPLOY/compose.vps.yaml" "$CFG/deploy/"
-  cat >"$CFG/.env" <<'EOF'
-IMAGE=ghcr.io/example/acme
-IMAGE_TAG=deadbeef
-SHOPWARE_SHOP_ID=acme
-SHOPWARE_DEPLOY_ENV=live
-MYSQL_USER=shopware
-MYSQL_PASSWORD=s3cret-not-in-logs
-MYSQL_ROOT_PASSWORD=root-not-in-logs
-EOF
-  : >"$CFG/.env.prod"
-  set +e
-  (cd "$CFG" && docker compose --env-file .env -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/compose.vps.yaml config --format json >"$CFG/out.json")
-  rc=$?
-  set -e
-  if [[ "$rc" -eq 0 ]] && python3 - "$CFG/out.json" <<'PY'
-import json, sys
-d = json.load(open(sys.argv[1]))
-ports = d["services"]["web"].get("ports") or []
-ok = len(ports) == 1 and ports[0].get("host_ip") == "127.0.0.1"
-mysql = d["services"]["mysql"].get("ports")
-hc = (d["services"]["web"].get("healthcheck") or {}).get("test") or []
-path_ok = any("api/_info/health-check" in str(x) for x in hc)
-web_pull = (d["services"]["web"].get("pull_policy") or "").lower()
-setup_pull = (d["services"]["setup"].get("pull_policy") or "").lower()
-raise SystemExit(0 if ok and mysql in (None, []) and path_ok and web_pull == "always" and setup_pull == "always" else 1)
-PY
-  then
-    pass "merged compose: one 127.0.0.1:8000 mapping, mysql unpublished, health path set, pull_policy always"
-  else
-    fail "merged compose ports/health/pull_policy not as required (rc=$rc)"
-  fi
-  set +e
-  (cd "$CFG" && PULL_POLICY=never docker compose --env-file .env -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/compose.vps.yaml config --format json >"$CFG/out-never.json")
-  rc=$?
-  set -e
-  if [[ "$rc" -eq 0 ]] && python3 - "$CFG/out-never.json" <<'PY'
-import json, sys
-d = json.load(open(sys.argv[1]))
-web_pull = (d["services"]["web"].get("pull_policy") or "").lower()
-setup_pull = (d["services"]["setup"].get("pull_policy") or "").lower()
-raise SystemExit(0 if web_pull == "never" and setup_pull == "never" else 1)
-PY
-  then
-    pass "PULL_POLICY=never interpolates pull_policy never on image services"
-  else
-    fail "PULL_POLICY=never did not change pull_policy (rc=$rc)"
-  fi
-else
-  echo "docker compose not available; skipped merge check"
-fi
-
 echo "==> HTTP probe against mock Shopware health path"
 PY_SRV="$TMP/health_srv.py"
 cat >"$PY_SRV" <<'PY'
@@ -325,36 +216,17 @@ else
 fi
 
 echo "==> live Compose profiles warning (#18)"
-if grep -q 'Uncomment on live' "$ROOT/root/.env.example" \
-  && grep -q 'COMPOSE_PROFILES=redis,worker,scheduler' "$ROOT/root/.env.example"; then
-  pass ".env.example states live COMPOSE_PROFILES recommendation"
-else
-  fail ".env.example missing live profiles recommendation"
-fi
 if grep -q 'COMPOSE_PROFILES=redis,worker,scheduler' "$ROOT/post-install.txt" \
-  && grep -q 'auto-enable' "$DEPLOY/README.md"; then
-  pass "post-install + deploy README mention profiles"
+  && grep -q 'auto-enable' "$ROOT/post-install.txt"; then
+  pass "post-install mentions profiles"
 else
-  fail "post-install / README missing profiles"
-fi
-
-echo "==> overlay ships no deploy shell scripts"
-if compgen -G "$DEPLOY/*.sh" >/dev/null || [[ -d "$DEPLOY/lib" ]]; then
-  fail "deploy still ships shell wrappers"
-else
-  pass "no deploy/*.sh or deploy/lib"
+  fail "post-install missing profiles"
 fi
 
 echo "==> SKIP_PULL / PULL_POLICY=never (same-host tag-and-load)"
-if grep -q 'pull_policy: ${PULL_POLICY:-always}' "$DEPLOY/compose.vps.yaml"; then
-  pass "compose.vps.yaml interpolates PULL_POLICY (default always)"
-else
-  fail "compose.vps.yaml missing PULL_POLICY interpolation"
-fi
-if grep -q 'PULL_POLICY=never' "$ROOT/root/.env.example" \
-  && grep -q 'SKIP_PULL=1' "$ROOT/root/.env.example" \
-  && grep -q 'PULL_POLICY=never' "$DEPLOY/README.md"; then
-  pass ".env.example + deploy README document PULL_POLICY=never / SKIP_PULL=1"
+if grep -q 'PULL_POLICY=never' "$ROOT/post-install.txt" \
+  && grep -q 'SKIP_PULL=1' "$ROOT/post-install.txt"; then
+  pass "post-install documents PULL_POLICY=never / SKIP_PULL=1"
 else
   fail "docs missing PULL_POLICY=never / SKIP_PULL=1"
 fi
@@ -380,29 +252,26 @@ else
 fi
 
 echo "==> COMPOSE_PROJECT_NAME create footgun"
-if grep -q 'COMPOSE_PROJECT_NAME=sw-shop' "$ROOT/root/.env.example" \
-  && grep -q 'COMPOSE_PROJECT_NAME=sw-shop' "$ROOT/post-install.txt" \
-  && grep -q 'COMPOSE_PROJECT_NAME=sw-shop' "$DEPLOY/README.md"; then
+if grep -q 'COMPOSE_PROJECT_NAME=sw-shop' "$ROOT/post-install.txt" \
+  && grep -q 'COMPOSE_PROJECT_NAME=sw-shop' "$ROOT/README.md"; then
   pass "docs warn about create's COMPOSE_PROJECT_NAME=sw-shop-… line"
 else
   fail "docs missing create COMPOSE_PROJECT_NAME=sw-shop-… warning"
 fi
 if grep -q 'does not delete it' "$ROOT/post-install.txt" \
-  && grep -q 'does not delete it' "$DEPLOY/README.md"; then
+  && grep -q 'does not delete it' "$ROOT/README.md"; then
   pass "docs say Flex does not delete create's COMPOSE_PROJECT_NAME"
 else
   fail "docs missing do-not-auto-delete wording"
 fi
 if grep -q 'env init --vps' "$ROOT/post-install.txt" \
-  && grep -q 'env init --vps' "$DEPLOY/README.md" \
-  && grep -q 'env init --vps' "$ROOT/root/.env.example"; then
+  && grep -q 'env init --vps' "$ROOT/README.md"; then
   pass "docs point at fyrst-cli shopware env init --vps for the VPS footgun"
 else
   fail "docs missing env init --vps"
 fi
-if grep -q 'env init --shop-id' "$ROOT/post-install.txt" \
-  && grep -q '###> fyrst/shopware-cd ###' "$DEPLOY/README.md"; then
-  pass "post-install + deploy README document Flex env + env init --shop-id"
+if grep -q 'env init --shop-id' "$ROOT/post-install.txt"; then
+  pass "post-install documents Flex env + env init --shop-id"
 else
   fail "docs missing Flex env / env init --shop-id"
 fi
@@ -432,73 +301,6 @@ if grep -q '.shopware-project.yml' "$ROOT/README.md" \
   pass "recipe README documents create's .yml"
 else
   fail "recipe README missing create .yml wording"
-fi
-CD_YAML="$ROOT/root/.github/workflows/cd.yaml"
-GL_YAML="$ROOT/root/.gitlab-ci.yaml"
-for f in "$CD_YAML" "$GL_YAML"; do
-  if grep -n 'SHOPWARE_PACKAGES_TOKEN' "$f" | grep -Eiq 'required'; then
-    fail "$(basename "$f") still lists SHOPWARE_PACKAGES_TOKEN as required"
-  else
-    pass "$(basename "$f") does not call SHOPWARE_PACKAGES_TOKEN required"
-  fi
-  if grep -q 'set only if the shop uses packages.shopware.com' "$f"; then
-    pass "$(basename "$f") says set only if the shop uses packages.shopware.com"
-  else
-    fail "$(basename "$f") missing optional packages.shopware.com wording"
-  fi
-done
-if grep -A5 'Required secrets' "$CD_YAML" | grep -q 'SHOPWARE_PACKAGES_TOKEN'; then
-  fail "cd.yaml still lists SHOPWARE_PACKAGES_TOKEN under Required secrets"
-else
-  pass "cd.yaml does not list packages token under Required secrets"
-fi
-if grep -Fq 'packages_token=${{ secrets.SHOPWARE_PACKAGES_TOKEN }}' "$CD_YAML"; then
-  pass "GitHub still passes packages_token BuildKit secret (empty is fine)"
-else
-  fail "GitHub dropped packages_token secret"
-fi
-if grep -q -- '--secret id=packages_token,env=SHOPWARE_PACKAGES_TOKEN' "$GL_YAML" \
-  && grep -q 'SHOPWARE_PACKAGES_TOKEN:-' "$GL_YAML"; then
-  pass "GitLab still passes packages_token (empty default)"
-else
-  fail "GitLab dropped empty-ok packages_token handling"
-fi
-if grep -Eiq 'SHOPWARE_PACKAGES_TOKEN.? is optional' "$DEPLOY/README.md" \
-  && grep -q 'packages.shopware.com' "$DEPLOY/README.md"; then
-  pass "deploy README marks SHOPWARE_PACKAGES_TOKEN optional"
-else
-  fail "deploy README missing optional SHOPWARE_PACKAGES_TOKEN wording"
-fi
-if grep -q 'SHOPWARE_PACKAGES_TOKEN is a CI secret' "$ROOT/root/.env.example" \
-  && grep -q 'packages.shopware.com' "$ROOT/root/.env.example"; then
-  pass ".env.example documents packages token as optional CI secret"
-else
-  fail ".env.example missing optional SHOPWARE_PACKAGES_TOKEN wording"
-fi
-
-echo "==> managed host planned, no failing stub (#19)"
-if grep -q 'deploy_managed:' "$ROOT/root/.github/workflows/cd.yaml" \
-  || grep -q 'deploy_managed:' "$ROOT/root/.gitlab-ci.yaml"; then
-  fail "CI still has a deploy_managed job"
-else
-  pass "CI has no deploy_managed job"
-fi
-if grep -q 'vars.DEPLOY_TARGET != .managed' "$ROOT/root/.github/workflows/cd.yaml" \
-  || grep -q 'DEPLOY_TARGET == "managed"' "$ROOT/root/.gitlab-ci.yaml"; then
-  fail "CI still gates Compose deploy on DEPLOY_TARGET=managed"
-else
-  pass "Compose deploy is not skipped for a planned managed target"
-fi
-if grep -qi 'planned' "$DEPLOY/managed/README.md" \
-  && grep -qi 'not implemented' "$DEPLOY/managed/README.md"; then
-  pass "managed README is planned / not implemented"
-else
-  fail "managed README still reads as a supported path"
-fi
-if grep -q 'exit 1' "$DEPLOY/managed/README.md" && grep -q 'Replace this job' "$ROOT/root/.github/workflows/cd.yaml"; then
-  fail "managed stub fail message still in CI"
-else
-  pass "CI does not pretend managed deploy works then fail"
 fi
 
 if [[ "$FAILS" -ne 0 ]]; then
