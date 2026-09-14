@@ -19,10 +19,9 @@ else
   pass "lib/sync-rewrite.sh is gone"
 fi
 
-echo "==> docs keep opt-in rewrite + live refuse"
+echo "==> docs keep APP_URL rewrite + live refuse"
 for needle in \
-  'SYNC_REWRITE_APP_URL' \
-  'SYNC_REWRITE_URL_MAP' \
+  'APP_URL' \
   'fyrst:sales-channel:rewrite-urls' \
   'impossible on live' \
   'hard-refused'
@@ -36,11 +35,17 @@ do
   fi
 done
 
-if grep -q 'SYNC_REWRITE_APP_URL' "$DEPLOY/sync.env.example" \
-  && grep -q 'fyrst:sales-channel:rewrite-urls' "$DEPLOY/sync.env.example"; then
-  pass "sync.env.example documents opt-in rewrite"
+EXAMPLE="${ROOT}/root/.env.example"
+if grep -q 'APP_URL' "$EXAMPLE" \
+  && grep -q 'fyrst-cli shopware sync rewrite' "$EXAMPLE"; then
+  pass ".env.example documents APP_URL rewrite"
 else
-  fail "sync.env.example missing rewrite env"
+  fail ".env.example missing APP_URL rewrite"
+fi
+if [[ -e "$DEPLOY/sync.env.example" ]]; then
+  fail "sync.env.example should have been removed"
+else
+  pass "sync.env.example is gone"
 fi
 
 if grep -q 'FyrstShopwareCdBundle' "$ROOT/post-install.txt" \
