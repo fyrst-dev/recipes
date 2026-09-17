@@ -264,11 +264,19 @@ if grep -q 'does not delete it' "$ROOT/post-install.txt" \
 else
   fail "docs missing do-not-auto-delete wording"
 fi
-if grep -q 'env init --vps' "$ROOT/post-install.txt" \
-  && grep -q 'env init --vps' "$ROOT/README.md"; then
-  pass "docs point at fyrst-cli shopware env init --vps for the VPS footgun"
+if ! grep -q -- '--vps' "$ROOT/post-install.txt" \
+  && ! grep -q -- '--vps' "$ROOT/README.md"; then
+  pass "docs do not mention --vps"
 else
-  fail "docs missing env init --vps"
+  fail "docs still mention --vps"
+fi
+if grep -q 'always comments out' "$ROOT/post-install.txt" \
+  && grep -q 'always comments out' "$ROOT/README.md" \
+  && grep -q 'laptop and VPS same' "$ROOT/post-install.txt" \
+  && grep -q 'laptop and VPS same' "$ROOT/README.md"; then
+  pass "docs say env init always comments COMPOSE_PROJECT_NAME (laptop and VPS same)"
+else
+  fail "docs missing always-strip COMPOSE_PROJECT_NAME wording"
 fi
 if grep -q 'env init --shop-id' "$ROOT/post-install.txt"; then
   pass "post-install documents Flex env + env init --shop-id"

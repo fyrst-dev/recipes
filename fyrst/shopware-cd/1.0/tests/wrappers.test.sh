@@ -96,6 +96,27 @@ do
   fi
 done
 
+echo "==> env init always-strip; --vps gone"
+set +e
+out="$(fyrst-cli shopware env init --help 2>&1)"
+rc=$?
+set -e
+if [[ "$rc" -eq 0 ]] && ! printf '%s' "$out" | grep -q -- '--vps' \
+  && printf '%s' "$out" | grep -q 'COMPOSE_PROJECT_NAME'; then
+  pass "env init --help has no --vps; documents COMPOSE_PROJECT_NAME"
+else
+  fail "env init --help still lists --vps rc=$rc out=$out"
+fi
+set +e
+out="$(fyrst-cli shopware env init --vps 2>&1)"
+rc=$?
+set -e
+if [[ "$rc" -ne 0 ]] && printf '%s' "$out" | grep -qiE 'unexpected argument|unexpected'; then
+  pass "env init rejects --vps"
+else
+  fail "env init still accepts --vps rc=$rc out=$out"
+fi
+
 echo "==> sync local --data all stays rejected"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -135,11 +156,13 @@ if grep -q 'fyrst-cli shopware deploy release' "$ROOT/post-install.txt" \
   && ! grep -q 'bash deploy/sync-runtime.sh' "$ROOT/post-install.txt" \
   && ! grep -q 'generate-app-secret' "$ROOT/post-install.txt" \
   && ! grep -q 'generate-app-secret' "$ROOT/README.md" \
+  && ! grep -q -- '--vps' "$ROOT/post-install.txt" \
+  && ! grep -q -- '--vps' "$ROOT/README.md" \
   && ! grep -q 'copy-from-recipe' "$ROOT/manifest.json" \
   && grep -q 'copy-from-package' "$ROOT/README.md"; then
-  pass "recipe docs are fyrst-cli lifecycle verbs (no wrappers / copy-from-recipe)"
+  pass "recipe docs are fyrst-cli lifecycle verbs (no wrappers / --vps / copy-from-recipe)"
 else
-  fail "recipe docs still document bash wrappers, copy-from-recipe, or --generate-app-secret"
+  fail "recipe docs still document bash wrappers, copy-from-recipe, --vps, or --generate-app-secret"
 fi
 
 if [[ "$FAILS" -ne 0 ]]; then
