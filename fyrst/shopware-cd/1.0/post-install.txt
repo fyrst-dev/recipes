@@ -46,7 +46,9 @@
     and does not put secrets in that block. Then run
     <comment>fyrst-cli shopware env init --shop-id …</comment>
     (see <comment>deploy/README</comment>).
-    That command does not generate <comment>APP_SECRET</comment>
+    That command always comments out create’s
+    <comment>COMPOSE_PROJECT_NAME</comment> (laptop and VPS same).
+    It does not generate <comment>APP_SECRET</comment>
     (<comment>shopware-cli project create</comment> already writes it).
     VPS <comment>.env</comment> source of truth (required):
     <comment>SHOPWARE_SHOP_ID</comment> (same slug on live + staging + laptop),
@@ -65,8 +67,8 @@
     <comment>.env</comment> for local <comment>project dev</comment>. That env var
     overrides Compose <comment>name:</comment>
     (<comment>${SHOPWARE_SHOP_ID}-${SHOPWARE_DEPLOY_ENV}</comment>).
-    On the VPS, comment out that line
-    (<comment>fyrst-cli shopware env init --vps</comment> or by hand).
+    <comment>fyrst-cli shopware env init</comment> always comments out
+    that line (laptop and VPS same).
     Flex does not delete it on <comment>composer require</comment>
     (create owns the local flow).
     Bootstrap:
@@ -95,7 +97,7 @@
     Flex may append SoT keys to <comment>.env</comment>; it does not
     overwrite create’s whole <comment>.env</comment>. Then run
     <comment>fyrst-cli shopware env init --shop-id …</comment>
-    (VPS: add <comment>--vps</comment>; see <comment>deploy/README</comment>).
+    (see <comment>deploy/README</comment>).
     If <comment>.env</comment> is missing, that command copies
     <comment>.env.example</comment> first. Commit the copied files;
     <comment>vendor/</comment> is gitignored.
