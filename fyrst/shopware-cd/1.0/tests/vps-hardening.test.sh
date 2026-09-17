@@ -72,11 +72,11 @@ cat >"$SHOP/.env" <<'EOF'
 IMAGE=ghcr.io/example/acme
 IMAGE_TAG=tag-b
 SHOPWARE_SHOP_ID=acme
-SHOPWARE_DEPLOY_ENV=live
 MYSQL_USER=shopware
 MYSQL_PASSWORD=s3cret-not-in-logs
 MYSQL_ROOT_PASSWORD=root-not-in-logs
 EOF
+printf 'SHOPWARE_DEPLOY_ENV=live\n' >"$SHOP/.env.local"
 : >"$SHOP/.env.prod"
 
 set +e
@@ -272,11 +272,44 @@ else
 fi
 if grep -q 'always comments out' "$ROOT/post-install.txt" \
   && grep -q 'always comments out' "$ROOT/README.md" \
-  && grep -q 'laptop and VPS same' "$ROOT/post-install.txt" \
-  && grep -q 'laptop and VPS same' "$ROOT/README.md"; then
-  pass "docs say env init always comments COMPOSE_PROJECT_NAME (laptop and VPS same)"
+  && grep -q '.env.local' "$ROOT/post-install.txt" \
+  && grep -q '.env.local' "$ROOT/README.md" \
+  && grep -q 'host `.env.local` owns' "$ROOT/README.md" \
+  && grep -q 'host <comment>.env.local</comment> owns' "$ROOT/post-install.txt" \
+  && grep -q 'acme-live' "$ROOT/post-install.txt" \
+  && grep -q 'acme-live' "$ROOT/README.md" \
+  && grep -q 'acme-dev' "$ROOT/post-install.txt" \
+  && grep -q 'acme-dev' "$ROOT/README.md" \
+  && grep -q 'compose.override.yaml' "$ROOT/post-install.txt" \
+  && grep -q 'compose.override.yaml' "$ROOT/README.md" \
+  && grep -q 'folder basename' "$ROOT/post-install.txt" \
+  && grep -q 'folder basename' "$ROOT/README.md" \
+  && grep -q -- '--env-file .env.local' "$ROOT/post-install.txt" \
+  && grep -q -- '--env-file .env.local' "$ROOT/README.md" \
+  && grep -q -- '--env-file .env.prod' "$ROOT/post-install.txt" \
+  && grep -q -- '--env-file .env.prod' "$ROOT/README.md" \
+  && ! grep -q 'matching pin' "$ROOT/post-install.txt" \
+  && ! grep -q 'matching pin' "$ROOT/README.md" \
+  && ! grep -q 'may pin' "$ROOT/post-install.txt" \
+  && ! grep -q 'may pin' "$ROOT/README.md" \
+  && ! grep -q '<comment>-p</comment>' "$ROOT/post-install.txt" \
+  && ! grep -qF -- '`-p`' "$ROOT/README.md" \
+  && grep -q 'project dev' "$ROOT/post-install.txt" \
+  && grep -q 'project dev' "$ROOT/README.md" \
+  && ! grep -q 'shopware-acme' "$ROOT/post-install.txt" \
+  && ! grep -q 'shopware-acme' "$ROOT/README.md" \
+  && ! grep -q 'COMPOSE_PROJECT_NAME=shopware-' "$ROOT/post-install.txt" \
+  && ! grep -q 'COMPOSE_PROJECT_NAME=shopware-' "$ROOT/README.md" \
+  && ! grep -q 'derived at runtime' "$ROOT/post-install.txt" \
+  && ! grep -q 'derived at runtime' "$ROOT/README.md" \
+  && ! grep -q 'laptop and VPS same' "$ROOT/post-install.txt" \
+  && ! grep -q 'laptop and VPS same' "$ROOT/README.md" \
+  && ! grep -q 'local/dev only' "$ROOT/README.md" \
+  && ! grep -q 'SHOPWARE_DEPLOY_ENV=live' "$ROOT/post-install.txt" \
+  && ! grep -q 'SHOPWARE_DEPLOY_ENV=live' "$ROOT/README.md"; then
+  pass "docs: env init comments COMPOSE_PROJECT_NAME in .env; .env.local + compose.override.yaml use acme-dev / acme-live"
 else
-  fail "docs missing always-strip COMPOSE_PROJECT_NAME wording"
+  fail "docs missing .env.local / compose.override.yaml / same-pattern project name wording"
 fi
 if grep -q 'env init --shop-id' "$ROOT/post-install.txt"; then
   pass "post-install documents Flex env + env init --shop-id"

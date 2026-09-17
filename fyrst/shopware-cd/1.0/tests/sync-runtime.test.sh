@@ -52,8 +52,8 @@ cat >"$SHOP/.env" <<'EOF'
 IMAGE=ghcr.io/example/acme
 IMAGE_TAG=tag-b
 SHOPWARE_SHOP_ID=acme
-SHOPWARE_DEPLOY_ENV=live
 EOF
+printf 'SHOPWARE_DEPLOY_ENV=live\n' >"$SHOP/.env.local"
 set +e
 out="$(cd "$SHOP" && fyrst-cli shopware sync apply --dry-run --snapshot-dir "$SHOP/var/runtime-sync" 2>&1)"
 rc=$?

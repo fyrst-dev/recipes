@@ -9,6 +9,7 @@ Thin Flex metadata for Packagist package [`fyrst/shopware-cd`](https://github.co
 | File | Owner |
 |---|---|
 | `compose.yaml`, `.gitignore`, `.shopware-project.yml` (create’s default; `.yaml` also accepted — do not rename) | `shopware-cli project create` / the CLI — **not** this recipe |
+| `compose.override.yaml` | `fyrst-cli shopware env init` sets `name: <shop-id>-<env>` so `shopware-cli project dev` uses that project name (not the folder basename). Typically gitignored; this recipe does not copy it. |
 | `docker/Dockerfile` | `shopware/docker` (required in the same `composer require`) |
 | `.github/workflows/cd.yaml`, `.gitlab-ci.yaml`, `deploy/` (Compose + edge), `.dockerignore`, `.env.example` | package `overlay/` via Flex `copy-from-package`. Operators run [fyrst-cli](https://github.com/fyrst-dev/cli) 0.1.0+ (install on each VPS). Dump stays `shopware-cli`. Create / image build stay out of this recipe. |
 
@@ -16,17 +17,17 @@ Thin Flex metadata for Packagist package [`fyrst/shopware-cd`](https://github.co
 
 Live Compose profiles: uncomment `COMPOSE_PROFILES=redis,worker,scheduler` in `.env`. Staging leaves profiles unset unless you intentionally need worker/scheduler.
 
-**VPS/CD:** image-based stack under `deploy/`:
+**VPS/CD:** image-based stack under `deploy/`. Naming SoT is `deploy/compose.yaml` `name: ${SHOPWARE_SHOP_ID}-${SHOPWARE_DEPLOY_ENV}` with host env files loaded. Raw operator Compose must use the same `--env-file` flags as fyrst-cli (not only `.env`). Omit `--env-file .env.prod` when that file is absent.
 
 ```bash
-docker compose --env-file .env -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/compose.vps.yaml
+docker compose --env-file .env --env-file .env.local --env-file .env.prod -f deploy/compose.yaml -f deploy/compose.prod.yaml -f deploy/compose.vps.yaml
 ```
 
 CI runs `fyrst-cli shopware deploy release` (existing `IMAGE` / `IMAGE_TAG` / `COMPOSE_DIR`). Rollback is `fyrst-cli shopware deploy rollback`.
 
-Flex `env` may append a `###> fyrst/shopware-cd ###` block to shop-root `.env` (empty `SHOPWARE_SHOP_ID`, `SHOPWARE_DEPLOY_ENV=live`, `SHOPWARE_DATA_BASE=/var/lib/shopware/data`). It does not overwrite create’s whole `.env`. Then run `fyrst-cli shopware env init --shop-id <slug>` (see the copied `deploy/README.md`). That command always comments out create’s `COMPOSE_PROJECT_NAME=sw-shop-…` line (laptop and VPS same; it overrides Compose `name:`). It does not generate `APP_SECRET` (`shopware-cli project create` already writes it). Install fyrst-cli 0.1.0+ on each VPS.
+Flex `env` may append a `###> fyrst/shopware-cd ###` block to shop-root `.env` (empty `SHOPWARE_SHOP_ID`, `SHOPWARE_DATA_BASE=/var/lib/shopware/data`). It does not put `SHOPWARE_DEPLOY_ENV` in that shared block (host `.env.local` owns deploy env and `COMPOSE_PROJECT_NAME`) and does not overwrite create’s whole `.env`. Then run `fyrst-cli shopware env init --shop-id <slug>` (see the copied `deploy/README.md`). That command always comments out create’s `COMPOSE_PROJECT_NAME=sw-shop-…` in committed `.env` (it overrides Compose `name:`). It does not write `COMPOSE_PROJECT_NAME` or a real `SHOPWARE_DEPLOY_ENV` into committed `.env`. It writes `SHOPWARE_DEPLOY_ENV` and `COMPOSE_PROJECT_NAME=<shop-id>-<env>` into gitignored `.env.local` (local `acme-dev`, VPS `acme-live` — same pattern, not the folder basename and not `shopware-<shop-id>`) and sets `compose.override.yaml` `name:` so `shopware-cli project dev` sees that project name. VPS Compose naming SoT is `deploy/compose.yaml` `name: ${SHOPWARE_SHOP_ID}-${SHOPWARE_DEPLOY_ENV}` with `--env-file .env` then `--env-file .env.local` then `--env-file .env.prod` (if present); fyrst-cli passes those same `--env-file` flags. It does not generate `APP_SECRET` (`shopware-cli project create` already writes it). Install fyrst-cli 0.1.0+ on each VPS.
 
-VPS runtime DB + bind-mount pull (no object storage): `fyrst-cli shopware sync {capture|apply|pull}` — see `deploy/sync-runtime.md`. **Dump stays `shopware-cli project dump`.** **Sync is not a backup** — live backups are `fyrst-cli shopware backup {create|prune|recover}`. Compose source of truth is `SHOPWARE_SHOP_ID` + `SHOPWARE_DEPLOY_ENV` (project name `acme-live`, uploads under `/var/lib/shopware/data/${SHOPWARE_SHOP_ID}/${SHOPWARE_DEPLOY_ENV}`). `COMPOSE_PROJECT_NAME` / `SHOPWARE_DATA_ROOT` are optional script overrides. Flex does not delete it on `composer require`. Same-host tag-and-load: `PULL_POLICY=never` / `SKIP_PULL=1`.
+VPS runtime DB + bind-mount pull (no object storage): `fyrst-cli shopware sync {capture|apply|pull}` — see `deploy/sync-runtime.md`. **Dump stays `shopware-cli project dump`.** **Sync is not a backup** — live backups are `fyrst-cli shopware backup {create|prune|recover}`. Shared committed `.env` holds `SHOPWARE_SHOP_ID` (+ optional `SHOPWARE_DATA_BASE`). Host `.env.local` holds `SHOPWARE_DEPLOY_ENV` and `COMPOSE_PROJECT_NAME=<shop-id>-<env>` (project name `acme-live` / `acme-dev`, uploads under `/var/lib/shopware/data/${SHOPWARE_SHOP_ID}/${SHOPWARE_DEPLOY_ENV}`). `SHOPWARE_DATA_ROOT` is an optional script override. Flex does not delete it on `composer require` (create’s `COMPOSE_PROJECT_NAME=sw-shop-…` stays until env init). Same-host tag-and-load: `PULL_POLICY=never` / `SKIP_PULL=1`.
 
 Prod HTTP is loopback-only; host TLS is `deploy/edge/Caddyfile`. `web` healthcheck is `GET /api/_info/health-check` on `127.0.0.1:8000` inside the container.
 

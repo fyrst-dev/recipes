@@ -49,8 +49,8 @@ if command -v fyrst-cli >/dev/null 2>&1; then
 IMAGE=ghcr.io/example/acme
 IMAGE_TAG=tag-b
 SHOPWARE_SHOP_ID=acme
-SHOPWARE_DEPLOY_ENV=staging
 EOF
+  printf 'SHOPWARE_DEPLOY_ENV=staging\n' >"$SHOP/.env.local"
   set +e
   out="$(cd "$SHOP" && fyrst-cli shopware sync capture --from local --data db --dry-run 2>&1)"
   rc=$?
