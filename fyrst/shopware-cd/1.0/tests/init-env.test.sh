@@ -387,7 +387,10 @@ out="$(COMPOSE_DIR="$SHOP" fyrst-cli shopware env init --shop-id acme 2>&1)"
 rc=$?
 set -e
 count="$(grep -c '^# COMPOSE_PROJECT_NAME=sw-shop-acme' "$SHOP/.env" || true)"
-live_count="$(grep -c '^SHOPWARE_DEPLOY_ENV=live$' "$SHOP/.env.local" || true)"
+live_count=0
+if [[ -f "$SHOP/.env.local" ]]; then
+  live_count="$(grep -c '^SHOPWARE_DEPLOY_ENV=live$' "$SHOP/.env.local" || true)"
+fi
 if [[ "$rc" -eq 0 && "$count" -eq 1 && "$live_count" -eq 1 ]] \
   && no_deploy_env_in_dotenv "$SHOP/.env" \
   && ! grep -q '^COMPOSE_PROJECT_NAME=' "$SHOP/.env" \
