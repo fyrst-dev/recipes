@@ -72,8 +72,7 @@
     <comment>--env-file .env.prod</comment> (if present).
     Raw operator Compose must use those same
     <comment>--env-file</comment> flags (not only
-    <comment>.env</comment>). fyrst-cli keeps
-    <comment>-p</comment> only as a matching pin.
+    <comment>.env</comment>).
     It does not generate <comment>APP_SECRET</comment>
     (<comment>shopware-cli project create</comment> already writes it).
     Shared committed <comment>.env</comment> (required):

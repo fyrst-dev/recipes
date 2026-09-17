@@ -85,18 +85,21 @@ if ! grep -q 'generate-app-secret' "$ROOT/post-install.txt" \
   && grep -q 'folder basename' "$ROOT/post-install.txt" \
   && grep -q 'folder basename' "$ROOT/README.md" \
   && grep -q 'folder basename' "$REPO_README" \
-  && grep -q 'matching pin' "$ROOT/post-install.txt" \
-  && grep -q 'matching pin' "$ROOT/README.md" \
-  && grep -q 'matching pin' "$REPO_README" \
   && grep -q -- '--env-file .env.local' "$ROOT/post-install.txt" \
   && grep -q -- '--env-file .env.local' "$ROOT/README.md" \
   && grep -q -- '--env-file .env.local' "$REPO_README" \
   && grep -q -- '--env-file .env.prod' "$ROOT/post-install.txt" \
   && grep -q -- '--env-file .env.prod' "$ROOT/README.md" \
   && grep -q -- '--env-file .env.prod' "$REPO_README" \
+  && ! grep -q 'matching pin' "$ROOT/post-install.txt" \
+  && ! grep -q 'matching pin' "$ROOT/README.md" \
+  && ! grep -q 'matching pin' "$REPO_README" \
   && ! grep -q 'may pin' "$ROOT/post-install.txt" \
   && ! grep -q 'may pin' "$ROOT/README.md" \
   && ! grep -q 'may pin' "$REPO_README" \
+  && ! grep -q '<comment>-p</comment>' "$ROOT/post-install.txt" \
+  && ! grep -qF -- '`-p`' "$ROOT/README.md" \
+  && ! grep -qF -- '`-p`' "$REPO_README" \
   && ! grep -q 'shopware-acme' "$ROOT/post-install.txt" \
   && ! grep -q 'shopware-acme' "$ROOT/README.md" \
   && ! grep -q 'shopware-acme' "$REPO_README" \
