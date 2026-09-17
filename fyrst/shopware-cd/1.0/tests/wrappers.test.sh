@@ -133,11 +133,13 @@ if grep -q 'fyrst-cli shopware deploy release' "$ROOT/post-install.txt" \
   && grep -q 'refused' "$ROOT/post-install.txt" \
   && ! grep -q 'bash ./deploy/vps-release.sh' "$ROOT/post-install.txt" \
   && ! grep -q 'bash deploy/sync-runtime.sh' "$ROOT/post-install.txt" \
+  && ! grep -q 'generate-app-secret' "$ROOT/post-install.txt" \
+  && ! grep -q 'generate-app-secret' "$ROOT/README.md" \
   && ! grep -q 'copy-from-recipe' "$ROOT/manifest.json" \
   && grep -q 'copy-from-package' "$ROOT/README.md"; then
   pass "recipe docs are fyrst-cli lifecycle verbs (no wrappers / copy-from-recipe)"
 else
-  fail "recipe docs still document bash wrappers or copy-from-recipe"
+  fail "recipe docs still document bash wrappers, copy-from-recipe, or --generate-app-secret"
 fi
 
 if [[ "$FAILS" -ne 0 ]]; then

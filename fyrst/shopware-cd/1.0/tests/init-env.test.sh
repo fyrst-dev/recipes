@@ -22,10 +22,22 @@ rc=$?
 set -e
 if [[ "$rc" -eq 0 ]] && printf '%s' "$out" | grep -q -- '--shop-id' \
   && printf '%s' "$out" | grep -q -- '--vps' \
-  && printf '%s' "$out" | grep -q -- '--dry-run'; then
-  pass "--help lists --shop-id / --vps / --dry-run"
+  && printf '%s' "$out" | grep -q -- '--dry-run' \
+  && printf '%s' "$out" | grep -q 'APP_SECRET' \
+  && ! printf '%s' "$out" | grep -q 'generate-app-secret'; then
+  pass "--help lists identity flags; APP_SECRET is not generated"
 else
   fail "--help rc=$rc out=$out"
+fi
+
+echo "==> recipe docs omit --generate-app-secret"
+if ! grep -q 'generate-app-secret' "$ROOT/post-install.txt" \
+  && ! grep -q 'generate-app-secret' "$ROOT/README.md" \
+  && grep -q 'APP_SECRET' "$ROOT/post-install.txt" \
+  && grep -q 'APP_SECRET' "$ROOT/README.md"; then
+  pass "recipe docs say env init leaves APP_SECRET alone"
+else
+  fail "recipe docs missing APP_SECRET contract or still mention --generate-app-secret"
 fi
 
 echo "==> manifest Flex env (safe defaults) + copy-from-package"
@@ -93,8 +105,12 @@ set -e
 if [[ "$rc" -eq 0 ]] && printf '%s' "$out" | grep -q 'DRY-RUN' \
   && printf '%s' "$out" | grep -q 'SHOPWARE_SHOP_ID=acme' \
   && printf '%s' "$out" | grep -q 'COMPOSE_PROJECT_NAME' \
-  && printf '%s' "$out" | grep -q 'IMAGE=ghcr.io/example/acme'; then
-  pass "dry-run summary sets shop id, image, and mentions COMPOSE_PROJECT_NAME"
+  && printf '%s' "$out" | grep -q 'IMAGE=ghcr.io/example/acme' \
+  && printf '%s' "$out" | grep -q 'APP_SECRET' \
+  && ! printf '%s' "$out" | grep -q 'generate-app-secret' \
+  && ! printf '%s' "$out" | grep -q 'set APP_SECRET' \
+  && ! printf '%s' "$out" | grep -q 'oldsecret'; then
+  pass "dry-run summary sets shop id, image, and leaves APP_SECRET alone"
 else
   fail "dry-run rc=$rc out=$out"
 fi
@@ -199,7 +215,7 @@ else
   fail "invalid --env rc=$rc out=$out"
 fi
 
-echo "==> existing shop id without --shop-id; --generate-app-secret"
+echo "==> existing shop id without --shop-id; APP_SECRET left alone"
 KEEP="$TMP/keep-id"
 mkdir -p "$KEEP"
 cat >"$KEEP/.env" <<'EOF'
@@ -224,27 +240,23 @@ if grep -q '^APP_URL=$' "$KEEP/.env"; then
 else
   fail "invented APP_URL"
 fi
-set +e
-out="$(COMPOSE_DIR="$KEEP" fyrst-cli shopware env init --generate-app-secret 2>&1)"
-rc=$?
-set -e
 secret="$(grep '^APP_SECRET=' "$KEEP/.env" | tail -n1 | cut -d= -f2-)"
-if [[ "$rc" -eq 0 && "$secret" =~ ^[0-9a-f]{64}$ ]] && printf '%s' "$out" | grep -q 'APP_SECRET' \
-  && ! printf '%s' "$out" | grep -q "$secret"; then
-  pass "--generate-app-secret fills empty APP_SECRET (64 hex; value not printed)"
+if [[ "$secret" == "" ]] && ! printf '%s' "$out" | grep -q 'generate-app-secret' \
+  && ! printf '%s' "$out" | grep -q 'set APP_SECRET'; then
+  pass "does not generate empty APP_SECRET"
 else
-  fail "generate-app-secret rc=$rc secret_len=${#secret} out=$out"
+  fail "empty APP_SECRET rewritten secret=${secret:-missing} out=$out"
 fi
-old_secret=$secret
 set +e
 out="$(COMPOSE_DIR="$KEEP" fyrst-cli shopware env init --generate-app-secret 2>&1)"
 rc=$?
 set -e
 secret2="$(grep '^APP_SECRET=' "$KEEP/.env" | tail -n1 | cut -d= -f2-)"
-if [[ "$rc" -eq 0 && "$secret2" == "$old_secret" ]] && printf '%s' "$out" | grep -q 'already set'; then
-  pass "--generate-app-secret is idempotent when APP_SECRET is set"
+if [[ "$rc" -ne 0 ]] && printf '%s' "$out" | grep -qiE 'unexpected argument|unexpected' \
+  && [[ "$secret2" == "" ]]; then
+  pass "--generate-app-secret is rejected; APP_SECRET still empty"
 else
-  fail "generate-app-secret clobbered rc=$rc out=$out"
+  fail "generate-app-secret still accepted rc=$rc secret2=$secret2 out=$out"
 fi
 
 echo "==> --vps is idempotent (already commented)"

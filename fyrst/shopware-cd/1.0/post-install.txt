@@ -46,6 +46,8 @@
     and does not put secrets in that block. Then run
     <comment>fyrst-cli shopware env init --shop-id …</comment>
     (see <comment>deploy/README</comment>).
+    That command does not generate <comment>APP_SECRET</comment>
+    (<comment>shopware-cli project create</comment> already writes it).
     VPS <comment>.env</comment> source of truth (required):
     <comment>SHOPWARE_SHOP_ID</comment> (same slug on live + staging + laptop),
     <comment>SHOPWARE_DEPLOY_ENV</comment> (live|staging|playground|dev).
