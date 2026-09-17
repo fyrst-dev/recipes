@@ -43,23 +43,27 @@
     <comment>SHOPWARE_SHOP_ID</comment>,
     <comment>SHOPWARE_DATA_BASE=/var/lib/shopware/data</comment>).
     It does not put <comment>SHOPWARE_DEPLOY_ENV</comment> in that
-    shared block (host <comment>.env.local</comment> owns deploy env)
-    and does not put secrets there. It does not overwrite
-    create’s whole <comment>.env</comment>. Then run
+    shared block (host <comment>.env.local</comment> owns deploy env
+    and <comment>COMPOSE_PROJECT_NAME</comment>) and does not put secrets
+    there. It does not overwrite create’s whole
+    <comment>.env</comment>. Then run
     <comment>fyrst-cli shopware env init --shop-id …</comment>
     (see <comment>deploy/README</comment>).
     That command always comments out create’s
     <comment>COMPOSE_PROJECT_NAME</comment> in committed <comment>.env</comment>
     (create writes <comment>COMPOSE_PROJECT_NAME=sw-shop-…</comment>).
-    It does not write <comment>COMPOSE_PROJECT_NAME</comment> into
-    <comment>.env</comment>. <comment>--env</comment> writes
-    <comment>SHOPWARE_DEPLOY_ENV</comment> into gitignored
-    <comment>.env.local</comment>, not the shared committed
-    <comment>.env</comment>.
-    VPS Compose project name is
-    <comment>${SHOPWARE_SHOP_ID}-${SHOPWARE_DEPLOY_ENV}</comment>
-    (<comment>acme-live</comment>) derived at runtime; fyrst-cli
-    may pin <comment>-p</comment>.
+    It does not write <comment>COMPOSE_PROJECT_NAME</comment> or a real
+    <comment>SHOPWARE_DEPLOY_ENV</comment> into committed <comment>.env</comment>.
+    It writes <comment>SHOPWARE_DEPLOY_ENV</comment> and
+    <comment>COMPOSE_PROJECT_NAME</comment> as
+    <comment>shop-id</comment>-<comment>env</comment>
+    into gitignored <comment>.env.local</comment>
+    (local <comment>acme-dev</comment>, VPS <comment>acme-live</comment> —
+    same pattern, not the folder basename and not
+    <comment>shopware-</comment> plus shop id) and sets
+    <comment>compose.override.yaml</comment> <comment>name:</comment> so
+    <comment>shopware-cli project dev</comment> sees that project name.
+    fyrst-cli may pin <comment>-p</comment> on VPS compose.
     It does not generate <comment>APP_SECRET</comment>
     (<comment>shopware-cli project create</comment> already writes it).
     Shared committed <comment>.env</comment> (required):
@@ -67,7 +71,8 @@
     optional <comment>SHOPWARE_DATA_BASE</comment> (default
     <comment>/var/lib/shopware/data</comment>).
     Host <comment>.env.local</comment> (gitignored):
-    <comment>SHOPWARE_DEPLOY_ENV</comment> (live|staging|playground|dev).
+    <comment>SHOPWARE_DEPLOY_ENV</comment> (live|staging|playground|dev)
+    and <comment>COMPOSE_PROJECT_NAME</comment>.
     Deploy Compose interpolates project name
     (<comment>${SHOPWARE_SHOP_ID}-${SHOPWARE_DEPLOY_ENV}</comment>)
     and bind-mount paths from those two plus optional
@@ -113,9 +118,12 @@
     <comment>fyrst-cli shopware env init --shop-id …</comment>
     (see <comment>deploy/README</comment>).
     If <comment>.env</comment> is missing, that command copies
-    <comment>.env.example</comment> first. <comment>--env</comment> writes
-    <comment>SHOPWARE_DEPLOY_ENV</comment> into gitignored
-    <comment>.env.local</comment>. Commit the copied files;
+    <comment>.env.example</comment> first. It writes
+    <comment>SHOPWARE_DEPLOY_ENV</comment> and
+    <comment>COMPOSE_PROJECT_NAME</comment> into gitignored
+    <comment>.env.local</comment> and sets
+    <comment>compose.override.yaml</comment> <comment>name:</comment>.
+    Commit the copied files;
     <comment>vendor/</comment> is gitignored.
 
     shopware-cli project create writes <comment>.shopware-project.yml</comment>
@@ -133,8 +141,9 @@
     <comment>APP_URL</comment> in shop-root <comment>.env</comment>;
     sync calls
     <comment>bin/console fyrst:sales-channel:rewrite-urls</comment>.
-    Laptop SSH (<comment>SHOPWARE_SSH_*</comment>) and host
-    <comment>SHOPWARE_DEPLOY_ENV</comment> belong in
+    Laptop SSH (<comment>SHOPWARE_SSH_*</comment>), host
+    <comment>SHOPWARE_DEPLOY_ENV</comment>, and
+    <comment>COMPOSE_PROJECT_NAME</comment> belong in
     <comment>.env.local</comment>.
     Shops need <comment>composer update fyrst/shopware-cd</comment>
     so the command and bundle exist, then

@@ -278,8 +278,12 @@ if grep -q 'always comments out' "$ROOT/post-install.txt" \
   && grep -q 'host <comment>.env.local</comment> owns' "$ROOT/post-install.txt" \
   && grep -q 'acme-live' "$ROOT/post-install.txt" \
   && grep -q 'acme-live' "$ROOT/README.md" \
-  && grep -q 'derived at runtime' "$ROOT/post-install.txt" \
-  && grep -q 'derived at runtime' "$ROOT/README.md" \
+  && grep -q 'acme-dev' "$ROOT/post-install.txt" \
+  && grep -q 'acme-dev' "$ROOT/README.md" \
+  && grep -q 'compose.override.yaml' "$ROOT/post-install.txt" \
+  && grep -q 'compose.override.yaml' "$ROOT/README.md" \
+  && grep -q 'folder basename' "$ROOT/post-install.txt" \
+  && grep -q 'folder basename' "$ROOT/README.md" \
   && grep -q 'may pin' "$ROOT/post-install.txt" \
   && grep -q 'may pin' "$ROOT/README.md" \
   && grep -q 'project dev' "$ROOT/post-install.txt" \
@@ -288,14 +292,16 @@ if grep -q 'always comments out' "$ROOT/post-install.txt" \
   && ! grep -q 'shopware-acme' "$ROOT/README.md" \
   && ! grep -q 'COMPOSE_PROJECT_NAME=shopware-' "$ROOT/post-install.txt" \
   && ! grep -q 'COMPOSE_PROJECT_NAME=shopware-' "$ROOT/README.md" \
+  && ! grep -q 'derived at runtime' "$ROOT/post-install.txt" \
+  && ! grep -q 'derived at runtime' "$ROOT/README.md" \
   && ! grep -q 'laptop and VPS same' "$ROOT/post-install.txt" \
   && ! grep -q 'laptop and VPS same' "$ROOT/README.md" \
   && ! grep -q 'local/dev only' "$ROOT/README.md" \
   && ! grep -q 'SHOPWARE_DEPLOY_ENV=live' "$ROOT/post-install.txt" \
   && ! grep -q 'SHOPWARE_DEPLOY_ENV=live' "$ROOT/README.md"; then
-  pass "docs: env init comments COMPOSE_PROJECT_NAME; .env.local owns deploy env; VPS name acme-live at runtime"
+  pass "docs: env init comments COMPOSE_PROJECT_NAME in .env; .env.local + compose.override.yaml use acme-dev / acme-live"
 else
-  fail "docs missing .env.local / strip COMPOSE_PROJECT_NAME wording"
+  fail "docs missing .env.local / compose.override.yaml / same-pattern project name wording"
 fi
 if grep -q 'env init --shop-id' "$ROOT/post-install.txt"; then
   pass "post-install documents Flex env + env init --shop-id"

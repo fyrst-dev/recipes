@@ -20,6 +20,22 @@ no_deploy_env_in_dotenv() {
   ! grep -qE '^SHOPWARE_DEPLOY_ENV=.+$' "$1"
 }
 
+override_has_name() {
+  local shop="$1" proj="$2"
+  [[ -f "$shop/compose.override.yaml" ]] \
+    && grep -qE "^name:[[:space:]]*['\"]?${proj}['\"]?[[:space:]]*$" "$shop/compose.override.yaml"
+}
+
+# Host .env.local holds deploy env + COMPOSE_PROJECT_NAME=<shop-id>-<env>;
+# compose.override.yaml name: matches so project dev sees it.
+local_project_identity() {
+  local shop="$1" denv="$2" proj="$3"
+  [[ -f "$shop/.env.local" ]] \
+    && grep -q "^SHOPWARE_DEPLOY_ENV=${denv}$" "$shop/.env.local" \
+    && grep -q "^COMPOSE_PROJECT_NAME=${proj}$" "$shop/.env.local" \
+    && override_has_name "$shop" "$proj"
+}
+
 echo "==> --help"
 set +e
 out="$(fyrst-cli shopware env init --help 2>&1)"
@@ -36,7 +52,7 @@ else
   fail "--help rc=$rc out=$out"
 fi
 
-echo "==> recipe docs: .env.local owns deploy env; env init strips COMPOSE_PROJECT_NAME"
+echo "==> recipe docs: .env.local owns deploy env + COMPOSE_PROJECT_NAME=<shop-id>-<env>"
 REPO_README="$(cd "$ROOT/../../.." && pwd)/README.md"
 if ! grep -q 'generate-app-secret' "$ROOT/post-install.txt" \
   && ! grep -q 'generate-app-secret' "$ROOT/README.md" \
@@ -60,9 +76,15 @@ if ! grep -q 'generate-app-secret' "$ROOT/post-install.txt" \
   && grep -q 'acme-live' "$ROOT/post-install.txt" \
   && grep -q 'acme-live' "$ROOT/README.md" \
   && grep -q 'acme-live' "$REPO_README" \
-  && grep -q 'derived at runtime' "$ROOT/post-install.txt" \
-  && grep -q 'derived at runtime' "$ROOT/README.md" \
-  && grep -q 'derived at runtime' "$REPO_README" \
+  && grep -q 'acme-dev' "$ROOT/post-install.txt" \
+  && grep -q 'acme-dev' "$ROOT/README.md" \
+  && grep -q 'acme-dev' "$REPO_README" \
+  && grep -q 'compose.override.yaml' "$ROOT/post-install.txt" \
+  && grep -q 'compose.override.yaml' "$ROOT/README.md" \
+  && grep -q 'compose.override.yaml' "$REPO_README" \
+  && grep -q 'folder basename' "$ROOT/post-install.txt" \
+  && grep -q 'folder basename' "$ROOT/README.md" \
+  && grep -q 'folder basename' "$REPO_README" \
   && grep -q 'may pin' "$ROOT/post-install.txt" \
   && grep -q 'may pin' "$ROOT/README.md" \
   && grep -q 'may pin' "$REPO_README" \
@@ -72,15 +94,18 @@ if ! grep -q 'generate-app-secret' "$ROOT/post-install.txt" \
   && ! grep -q 'COMPOSE_PROJECT_NAME=shopware-' "$ROOT/post-install.txt" \
   && ! grep -q 'COMPOSE_PROJECT_NAME=shopware-' "$ROOT/README.md" \
   && ! grep -q 'COMPOSE_PROJECT_NAME=shopware-' "$REPO_README" \
+  && ! grep -q 'derived at runtime' "$ROOT/post-install.txt" \
+  && ! grep -q 'derived at runtime' "$ROOT/README.md" \
+  && ! grep -q 'derived at runtime' "$REPO_README" \
   && ! grep -q 'laptop and VPS same' "$ROOT/post-install.txt" \
   && ! grep -q 'laptop and VPS same' "$ROOT/README.md" \
   && ! grep -q 'laptop and VPS same' "$REPO_README" \
   && ! grep -q 'SHOPWARE_DEPLOY_ENV=live' "$ROOT/post-install.txt" \
   && ! grep -q 'SHOPWARE_DEPLOY_ENV=live' "$ROOT/README.md" \
   && ! grep -q 'SHOPWARE_DEPLOY_ENV=live' "$REPO_README"; then
-  pass "recipe docs: shared .env has no deploy env / COMPOSE_PROJECT_NAME; .env.local owns SHOPWARE_DEPLOY_ENV; VPS name acme-live at runtime"
+  pass "recipe docs: shared .env has no deploy env / COMPOSE_PROJECT_NAME; .env.local + compose.override.yaml use acme-dev / acme-live"
 else
-  fail "recipe docs still mention dual-name / Flex SHOPWARE_DEPLOY_ENV=live or miss .env.local + strip"
+  fail "recipe docs still mention dual-name / Flex SHOPWARE_DEPLOY_ENV=live or miss .env.local + override name"
 fi
 
 echo "==> manifest Flex env (safe defaults) + copy-from-package"
@@ -121,7 +146,7 @@ else
   fail "missing both files rc=$rc out=$out"
 fi
 
-echo "==> dry-run does not write; real run comments COMPOSE_PROJECT_NAME; deploy env → .env.local"
+echo "==> dry-run does not write; real run comments COMPOSE_PROJECT_NAME; identity → .env.local + compose.override.yaml"
 SHOP="$TMP/acme"
 mkdir -p "$SHOP"
 write_stub_env_example "$SHOP"
@@ -163,10 +188,10 @@ if cmp -s "$SHOP/.env" "$SHOP/.env.before"; then
 else
   fail "dry-run mutated .env"
 fi
-if [[ ! -f "$SHOP/.env.local" ]]; then
-  pass "dry-run does not write .env.local"
+if [[ ! -f "$SHOP/.env.local" && ! -f "$SHOP/compose.override.yaml" ]]; then
+  pass "dry-run does not write .env.local or compose.override.yaml"
 else
-  fail "dry-run mutated .env.local"
+  fail "dry-run mutated .env.local or compose.override.yaml"
 fi
 
 set +e
@@ -191,10 +216,11 @@ if grep -q '^SHOPWARE_SHOP_ID=acme$' "$envf" \
 else
   fail "real run SoT keys: $(grep -E '^(SHOPWARE_|IMAGE=)' "$envf" || true)"
 fi
-if [[ -f "$SHOP/.env.local" ]] && grep -q '^SHOPWARE_DEPLOY_ENV=live$' "$SHOP/.env.local"; then
-  pass "real run writes SHOPWARE_DEPLOY_ENV=live into .env.local"
+if [[ -f "$SHOP/.env.local" ]] && local_project_identity "$SHOP" live acme-live \
+  && ! grep -q 'shopware-acme' "$SHOP/.env.local"; then
+  pass "real run writes SHOPWARE_DEPLOY_ENV=live and COMPOSE_PROJECT_NAME=acme-live into .env.local; override name: acme-live"
 else
-  fail "real run did not write .env.local deploy env: $(cat "$SHOP/.env.local" 2>/dev/null || true)"
+  fail "real run identity: local=$(cat "$SHOP/.env.local" 2>/dev/null || true) override=$(cat "$SHOP/compose.override.yaml" 2>/dev/null || true)"
 fi
 if grep -q '^APP_URL=https://keep.example$' "$envf" \
   && grep -q '^MYSQL_PASSWORD=keepme$' "$envf" \
@@ -243,10 +269,10 @@ rc=$?
 set -e
 if [[ "$rc" -eq 0 ]] && no_deploy_env_in_dotenv "$LEFTOVER/.env" \
   && grep -q '^SHOPWARE_SHOP_ID=acme$' "$LEFTOVER/.env" \
-  && grep -q '^SHOPWARE_DEPLOY_ENV=staging$' "$LEFTOVER/.env.local"; then
-  pass "migrates leftover Flex SHOPWARE_DEPLOY_ENV out of .env into .env.local"
+  && local_project_identity "$LEFTOVER" staging acme-staging; then
+  pass "migrates leftover Flex SHOPWARE_DEPLOY_ENV out of .env; .env.local + override use acme-staging"
 else
-  fail "leftover Flex deploy env rc=$rc env=$(grep SHOPWARE_DEPLOY_ENV "$LEFTOVER/.env" || true) local=$(cat "$LEFTOVER/.env.local" 2>/dev/null || true) out=$out"
+  fail "leftover Flex deploy env rc=$rc env=$(grep SHOPWARE_DEPLOY_ENV "$LEFTOVER/.env" || true) local=$(cat "$LEFTOVER/.env.local" 2>/dev/null || true) override=$(cat "$LEFTOVER/compose.override.yaml" 2>/dev/null || true) out=$out"
 fi
 
 echo "==> copy .env.example when .env is missing"
@@ -260,11 +286,11 @@ set -e
 if [[ "$rc" -eq 0 && -f "$COPY_SHOP/.env" ]] && printf '%s' "$out" | grep -q 'copy .env.example' \
   && grep -q '^SHOPWARE_SHOP_ID=widgets$' "$COPY_SHOP/.env" \
   && no_deploy_env_in_dotenv "$COPY_SHOP/.env" \
-  && grep -q '^SHOPWARE_DEPLOY_ENV=staging$' "$COPY_SHOP/.env.local" \
+  && local_project_identity "$COPY_SHOP" staging widgets-staging \
   && ! grep -q '^COMPOSE_PROJECT_NAME=' "$COPY_SHOP/.env"; then
-  pass "creates .env from .env.example; --shop-id in .env; --env in .env.local; no COMPOSE_PROJECT_NAME"
+  pass "creates .env from .env.example; --shop-id in .env; widgets-staging in .env.local + override"
 else
-  fail "copy-from-example rc=$rc out=$out local=$(cat "$COPY_SHOP/.env.local" 2>/dev/null || true)"
+  fail "copy-from-example rc=$rc out=$out local=$(cat "$COPY_SHOP/.env.local" 2>/dev/null || true) override=$(cat "$COPY_SHOP/compose.override.yaml" 2>/dev/null || true)"
 fi
 if [[ -f "$COPY_SHOP/.env" ]]; then
   mode="$(stat -c '%a' "$COPY_SHOP/.env")"
@@ -315,11 +341,11 @@ rc=$?
 set -e
 if [[ "$rc" -eq 0 ]] && grep -q '^SHOPWARE_SHOP_ID=acme$' "$KEEP/.env" \
   && no_deploy_env_in_dotenv "$KEEP/.env" \
-  && grep -q '^SHOPWARE_DEPLOY_ENV=staging$' "$KEEP/.env.local" \
+  && local_project_identity "$KEEP" staging acme-staging \
   && ! grep -q '^COMPOSE_PROJECT_NAME=' "$KEEP/.env"; then
-  pass "keeps existing shop id in .env and deploy env in .env.local; does not write COMPOSE_PROJECT_NAME"
+  pass "keeps existing shop id in .env; writes acme-staging into .env.local + override; no COMPOSE_PROJECT_NAME in .env"
 else
-  fail "keep existing rc=$rc out=$out env=$(cat "$KEEP/.env") local=$(cat "$KEEP/.env.local" 2>/dev/null || true)"
+  fail "keep existing rc=$rc out=$out env=$(cat "$KEEP/.env") local=$(cat "$KEEP/.env.local" 2>/dev/null || true) override=$(cat "$KEEP/compose.override.yaml" 2>/dev/null || true)"
 fi
 if grep -q '^APP_URL=$' "$KEEP/.env"; then
   pass "does not invent APP_URL"
@@ -345,7 +371,7 @@ else
   fail "generate-app-secret still accepted rc=$rc secret2=$secret2 out=$out"
 fi
 
-echo "==> laptop env init also comments COMPOSE_PROJECT_NAME; deploy env → .env.local"
+echo "==> laptop env init also comments COMPOSE_PROJECT_NAME; local name widgets-dev"
 LAP="$TMP/laptop"
 mkdir -p "$LAP"
 write_stub_env_example "$LAP"
@@ -360,14 +386,14 @@ rc=$?
 set -e
 if [[ "$rc" -eq 0 ]] && grep -q '^# COMPOSE_PROJECT_NAME=sw-shop-widgets' "$LAP/.env" \
   && no_deploy_env_in_dotenv "$LAP/.env" \
-  && grep -q '^SHOPWARE_DEPLOY_ENV=dev$' "$LAP/.env.local" \
+  && local_project_identity "$LAP" dev widgets-dev \
   && ! grep -q '^COMPOSE_PROJECT_NAME=' "$LAP/.env" \
   && printf '%s' "$out" | grep -q 'commented' \
   && ! printf '%s' "$out" | grep -q -- '--vps' \
   && ! printf '%s' "$out" | grep -q 'shopware-widgets'; then
-  pass "laptop env init comments COMPOSE_PROJECT_NAME and keeps deploy env in .env.local"
+  pass "laptop env init comments create’s COMPOSE_PROJECT_NAME; .env.local + override use widgets-dev"
 else
-  fail "laptop strip rc=$rc out=$out env=$(grep -E 'COMPOSE_PROJECT_NAME|SHOPWARE_DEPLOY_ENV' "$LAP/.env" || true) local=$(cat "$LAP/.env.local" 2>/dev/null || true)"
+  fail "laptop strip rc=$rc out=$out env=$(grep -E 'COMPOSE_PROJECT_NAME|SHOPWARE_DEPLOY_ENV' "$LAP/.env" || true) local=$(cat "$LAP/.env.local" 2>/dev/null || true) override=$(cat "$LAP/compose.override.yaml" 2>/dev/null || true)"
 fi
 
 echo "==> --vps is rejected"
@@ -388,16 +414,22 @@ rc=$?
 set -e
 count="$(grep -c '^# COMPOSE_PROJECT_NAME=sw-shop-acme' "$SHOP/.env" || true)"
 live_count=0
+cpn_count=0
+name_count=0
 if [[ -f "$SHOP/.env.local" ]]; then
   live_count="$(grep -c '^SHOPWARE_DEPLOY_ENV=live$' "$SHOP/.env.local" || true)"
+  cpn_count="$(grep -c '^COMPOSE_PROJECT_NAME=acme-live$' "$SHOP/.env.local" || true)"
 fi
-if [[ "$rc" -eq 0 && "$count" -eq 1 && "$live_count" -eq 1 ]] \
+if [[ -f "$SHOP/compose.override.yaml" ]]; then
+  name_count="$(grep -cE "^name:[[:space:]]*['\"]?acme-live['\"]?[[:space:]]*$" "$SHOP/compose.override.yaml" || true)"
+fi
+if [[ "$rc" -eq 0 && "$count" -eq 1 && "$live_count" -eq 1 && "$cpn_count" -eq 1 && "$name_count" -eq 1 ]] \
   && no_deploy_env_in_dotenv "$SHOP/.env" \
   && ! grep -q '^COMPOSE_PROJECT_NAME=' "$SHOP/.env" \
   && ! printf '%s' "$out" | grep -q -- '--vps'; then
-  pass "second env init does not double-comment COMPOSE_PROJECT_NAME or duplicate .env.local deploy env"
+  pass "second env init does not double-comment COMPOSE_PROJECT_NAME or duplicate .env.local / override identity"
 else
-  fail "idempotent strip rc=$rc count=$count live_count=$live_count out=$out"
+  fail "idempotent strip rc=$rc count=$count live_count=$live_count cpn_count=$cpn_count name_count=$name_count out=$out"
 fi
 
 if [[ "$FAILS" -ne 0 ]]; then
