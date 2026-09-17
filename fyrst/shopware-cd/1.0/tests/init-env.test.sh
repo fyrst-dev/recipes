@@ -26,29 +26,41 @@ if [[ "$rc" -eq 0 ]] && printf '%s' "$out" | grep -q -- '--shop-id' \
   && printf '%s' "$out" | grep -q 'COMPOSE_PROJECT_NAME' \
   && ! printf '%s' "$out" | grep -q -- '--vps' \
   && ! printf '%s' "$out" | grep -q 'generate-app-secret'; then
-  pass "--help lists identity flags; always-strip; no --vps"
+  pass "--help lists identity flags; documents COMPOSE_PROJECT_NAME; no --vps"
 else
   fail "--help rc=$rc out=$out"
 fi
 
-echo "==> recipe docs omit --vps / --generate-app-secret; always-strip"
+echo "==> recipe docs omit --vps / --generate-app-secret; env init sets COMPOSE_PROJECT_NAME"
 REPO_README="$(cd "$ROOT/../../.." && pwd)/README.md"
 if ! grep -q 'generate-app-secret' "$ROOT/post-install.txt" \
   && ! grep -q 'generate-app-secret' "$ROOT/README.md" \
   && ! grep -q -- '--vps' "$ROOT/post-install.txt" \
   && ! grep -q -- '--vps' "$ROOT/README.md" \
   && ! grep -q -- '--vps' "$REPO_README" \
+  && ! grep -q 'always comments out' "$ROOT/post-install.txt" \
+  && ! grep -q 'always comments out' "$ROOT/README.md" \
+  && ! grep -q 'always comments out' "$REPO_README" \
   && grep -q 'APP_SECRET' "$ROOT/post-install.txt" \
   && grep -q 'APP_SECRET' "$ROOT/README.md" \
-  && grep -q 'always comments out' "$ROOT/post-install.txt" \
-  && grep -q 'always comments out' "$ROOT/README.md" \
-  && grep -q 'always comments out' "$REPO_README" \
+  && grep -q 'COMPOSE_PROJECT_NAME=shopware-' "$ROOT/post-install.txt" \
+  && grep -q 'COMPOSE_PROJECT_NAME=shopware-' "$ROOT/README.md" \
+  && grep -q 'COMPOSE_PROJECT_NAME=shopware-' "$REPO_README" \
+  && grep -q 'shopware-acme' "$ROOT/post-install.txt" \
+  && grep -q 'shopware-acme' "$ROOT/README.md" \
+  && grep -q 'shopware-acme' "$REPO_README" \
+  && grep -q -- '--env-file .env' "$ROOT/post-install.txt" \
+  && grep -q -- '--env-file .env' "$ROOT/README.md" \
+  && grep -q -- '--env-file .env' "$REPO_README" \
+  && grep -q 'Docker Compose precedence' "$ROOT/post-install.txt" \
+  && grep -q 'Docker Compose precedence' "$ROOT/README.md" \
+  && grep -q 'Docker Compose precedence' "$REPO_README" \
   && grep -q 'laptop and VPS same' "$ROOT/post-install.txt" \
   && grep -q 'laptop and VPS same' "$ROOT/README.md" \
   && grep -q 'laptop and VPS same' "$REPO_README"; then
-  pass "recipe docs: always-strip COMPOSE_PROJECT_NAME; laptop and VPS same"
+  pass "recipe docs: env init sets COMPOSE_PROJECT_NAME=shopware-<shop-id>; laptop and VPS same"
 else
-  fail "recipe docs still mention --vps / --generate-app-secret or miss always-strip"
+  fail "recipe docs still mention --vps / --generate-app-secret / always-strip or miss shopware-<shop-id>"
 fi
 
 echo "==> manifest Flex env (safe defaults) + copy-from-package"
@@ -89,7 +101,7 @@ else
   fail "missing both files rc=$rc out=$out"
 fi
 
-echo "==> dry-run does not write; real run always comments COMPOSE_PROJECT_NAME"
+echo "==> dry-run does not write; real run sets COMPOSE_PROJECT_NAME=shopware-<shop-id>"
 SHOP="$TMP/acme"
 mkdir -p "$SHOP"
 write_stub_env_example "$SHOP"
@@ -116,13 +128,15 @@ set -e
 if [[ "$rc" -eq 0 ]] && printf '%s' "$out" | grep -q 'DRY-RUN' \
   && printf '%s' "$out" | grep -q 'SHOPWARE_SHOP_ID=acme' \
   && printf '%s' "$out" | grep -q 'COMPOSE_PROJECT_NAME' \
+  && printf '%s' "$out" | grep -q 'shopware-acme' \
   && printf '%s' "$out" | grep -q 'IMAGE=ghcr.io/example/acme' \
   && printf '%s' "$out" | grep -q 'APP_SECRET' \
   && ! printf '%s' "$out" | grep -q -- '--vps' \
   && ! printf '%s' "$out" | grep -q 'generate-app-secret' \
   && ! printf '%s' "$out" | grep -q 'set APP_SECRET' \
-  && ! printf '%s' "$out" | grep -q 'oldsecret'; then
-  pass "dry-run summary sets shop id, image, and always-strip without --vps"
+  && ! printf '%s' "$out" | grep -q 'oldsecret' \
+  && ! printf '%s' "$out" | grep -qE 'commented [0-9]|always comments'; then
+  pass "dry-run summary sets shop id, image, and COMPOSE_PROJECT_NAME=shopware-acme without --vps"
 else
   fail "dry-run rc=$rc out=$out"
 fi
@@ -137,10 +151,11 @@ out="$(COMPOSE_DIR="$SHOP" fyrst-cli shopware env init --shop-id acme --env live
 rc=$?
 set -e
 if [[ "$rc" -eq 0 ]] && printf '%s' "$out" | grep -q 'SHOPWARE_SHOP_ID=acme' \
-  && printf '%s' "$out" | grep -q 'commented' \
   && printf '%s' "$out" | grep -q 'COMPOSE_PROJECT_NAME' \
+  && printf '%s' "$out" | grep -q 'shopware-acme' \
+  && ! printf '%s' "$out" | grep -qE 'commented [0-9]|always comments' \
   && ! printf '%s' "$out" | grep -q -- '--vps'; then
-  pass "real run summary sets shop id and always comments COMPOSE_PROJECT_NAME"
+  pass "real run summary sets shop id and COMPOSE_PROJECT_NAME=shopware-acme"
 else
   fail "real run rc=$rc out=$out"
 fi
@@ -160,13 +175,16 @@ if grep -q '^APP_URL=https://keep.example$' "$envf" \
 else
   fail "clobbered operator secrets"
 fi
-if grep -q '^# COMPOSE_PROJECT_NAME=sw-shop-acme' "$envf" \
+cpn_count="$(grep -c '^COMPOSE_PROJECT_NAME=' "$envf" || true)"
+if grep -q '^COMPOSE_PROJECT_NAME=shopware-acme$' "$envf" \
+  && [[ "$cpn_count" -eq 1 ]] \
+  && ! grep -q 'sw-shop-acme' "$envf" \
   && ! grep -q -- '--vps' "$envf" \
-  && ! grep -q '^COMPOSE_PROJECT_NAME=' "$envf" \
+  && ! grep -qE '^COMPOSE_PROJECT_NAME=(acme-live|shopware-acme-live)$' "$envf" \
   && ! grep -q '^COMPOSE_PROJECT_NAME=$' "$envf"; then
-  pass "always comments COMPOSE_PROJECT_NAME and does not leave COMPOSE_PROJECT_NAME="
+  pass "sets COMPOSE_PROJECT_NAME=shopware-acme (replaces create’s sw-shop-…; no env suffix)"
 else
-  fail "did not comment COMPOSE_PROJECT_NAME correctly: $(grep COMPOSE_PROJECT_NAME "$envf" || true)"
+  fail "did not set COMPOSE_PROJECT_NAME=shopware-acme: $(grep COMPOSE_PROJECT_NAME "$envf" || true)"
 fi
 if grep -q '^HTTP_PORT=' "$envf" && grep -q '^MYSQL_DATABASE=' "$envf"; then
   pass "merged missing keys from .env.example"
@@ -190,8 +208,10 @@ rc=$?
 set -e
 if [[ "$rc" -eq 0 && -f "$COPY_SHOP/.env" ]] && printf '%s' "$out" | grep -q 'copy .env.example' \
   && grep -q '^SHOPWARE_SHOP_ID=widgets$' "$COPY_SHOP/.env" \
-  && grep -q '^SHOPWARE_DEPLOY_ENV=staging$' "$COPY_SHOP/.env"; then
-  pass "creates .env from .env.example and sets --shop-id / --env"
+  && grep -q '^SHOPWARE_DEPLOY_ENV=staging$' "$COPY_SHOP/.env" \
+  && grep -q '^COMPOSE_PROJECT_NAME=shopware-widgets$' "$COPY_SHOP/.env" \
+  && ! grep -qE '^COMPOSE_PROJECT_NAME=(widgets-staging|shopware-widgets-staging)$' "$COPY_SHOP/.env"; then
+  pass "creates .env from .env.example and sets --shop-id / --env / COMPOSE_PROJECT_NAME=shopware-widgets"
 else
   fail "copy-from-example rc=$rc out=$out"
 fi
@@ -243,8 +263,9 @@ out="$(COMPOSE_DIR="$KEEP" fyrst-cli shopware env init 2>&1)"
 rc=$?
 set -e
 if [[ "$rc" -eq 0 ]] && grep -q '^SHOPWARE_SHOP_ID=acme$' "$KEEP/.env" \
-  && grep -q '^SHOPWARE_DEPLOY_ENV=staging$' "$KEEP/.env"; then
-  pass "keeps existing shop id and deploy env without flags"
+  && grep -q '^SHOPWARE_DEPLOY_ENV=staging$' "$KEEP/.env" \
+  && grep -q '^COMPOSE_PROJECT_NAME=shopware-acme$' "$KEEP/.env"; then
+  pass "keeps existing shop id and deploy env; sets COMPOSE_PROJECT_NAME=shopware-acme"
 else
   fail "keep existing rc=$rc out=$out"
 fi
@@ -272,7 +293,7 @@ else
   fail "generate-app-secret still accepted rc=$rc secret2=$secret2 out=$out"
 fi
 
-echo "==> laptop env init also comments COMPOSE_PROJECT_NAME"
+echo "==> laptop env init also sets COMPOSE_PROJECT_NAME=shopware-<shop-id>"
 LAP="$TMP/laptop"
 mkdir -p "$LAP"
 write_stub_env_example "$LAP"
@@ -285,14 +306,16 @@ set +e
 out="$(COMPOSE_DIR="$LAP" fyrst-cli shopware env init --shop-id widgets 2>&1)"
 rc=$?
 set -e
-if [[ "$rc" -eq 0 ]] && grep -q '^# COMPOSE_PROJECT_NAME=sw-shop-widgets' "$LAP/.env" \
+if [[ "$rc" -eq 0 ]] && grep -q '^COMPOSE_PROJECT_NAME=shopware-widgets$' "$LAP/.env" \
   && grep -q '^SHOPWARE_DEPLOY_ENV=dev$' "$LAP/.env" \
-  && ! grep -q '^COMPOSE_PROJECT_NAME=' "$LAP/.env" \
-  && printf '%s' "$out" | grep -q 'commented' \
+  && ! grep -q 'sw-shop-widgets' "$LAP/.env" \
+  && ! grep -qE '^COMPOSE_PROJECT_NAME=(widgets-dev|shopware-widgets-dev)$' "$LAP/.env" \
+  && printf '%s' "$out" | grep -q 'shopware-widgets' \
+  && ! printf '%s' "$out" | grep -qE 'commented [0-9]|always comments' \
   && ! printf '%s' "$out" | grep -q -- '--vps'; then
-  pass "laptop env init comments COMPOSE_PROJECT_NAME (same as VPS)"
+  pass "laptop env init sets COMPOSE_PROJECT_NAME=shopware-widgets (same as VPS; no env suffix)"
 else
-  fail "laptop always-strip rc=$rc out=$out env=$(grep COMPOSE_PROJECT_NAME "$LAP/.env" || true)"
+  fail "laptop COMPOSE_PROJECT_NAME rc=$rc out=$out env=$(grep COMPOSE_PROJECT_NAME "$LAP/.env" || true)"
 fi
 
 echo "==> --vps is rejected"
@@ -306,17 +329,18 @@ else
   fail "--vps still accepted rc=$rc out=$out"
 fi
 
-echo "==> always-strip is idempotent (already commented)"
+echo "==> COMPOSE_PROJECT_NAME=shopware-<shop-id> is idempotent"
 set +e
 out="$(COMPOSE_DIR="$SHOP" fyrst-cli shopware env init --shop-id acme 2>&1)"
 rc=$?
 set -e
-count="$(grep -c '^# COMPOSE_PROJECT_NAME=sw-shop-acme' "$SHOP/.env" || true)"
-if [[ "$rc" -eq 0 && "$count" -eq 1 ]] && printf '%s' "$out" | grep -q 'no uncommented COMPOSE_PROJECT_NAME' \
+count="$(grep -c '^COMPOSE_PROJECT_NAME=shopware-acme$' "$SHOP/.env" || true)"
+if [[ "$rc" -eq 0 && "$count" -eq 1 ]] \
+  && ! grep -q 'sw-shop-acme' "$SHOP/.env" \
   && ! printf '%s' "$out" | grep -q -- '--vps'; then
-  pass "second env init does not double-comment COMPOSE_PROJECT_NAME"
+  pass "second env init keeps a single COMPOSE_PROJECT_NAME=shopware-acme"
 else
-  fail "idempotent always-strip rc=$rc count=$count out=$out"
+  fail "idempotent COMPOSE_PROJECT_NAME rc=$rc count=$count out=$out"
 fi
 
 if [[ "$FAILS" -ne 0 ]]; then

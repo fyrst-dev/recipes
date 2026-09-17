@@ -270,13 +270,21 @@ if ! grep -q -- '--vps' "$ROOT/post-install.txt" \
 else
   fail "docs still mention --vps"
 fi
-if grep -q 'always comments out' "$ROOT/post-install.txt" \
-  && grep -q 'always comments out' "$ROOT/README.md" \
+if grep -q 'COMPOSE_PROJECT_NAME=shopware-' "$ROOT/post-install.txt" \
+  && grep -q 'COMPOSE_PROJECT_NAME=shopware-' "$ROOT/README.md" \
+  && grep -q 'shopware-acme' "$ROOT/post-install.txt" \
+  && grep -q 'shopware-acme' "$ROOT/README.md" \
+  && grep -q -- '--env-file .env' "$ROOT/post-install.txt" \
+  && grep -q -- '--env-file .env' "$ROOT/README.md" \
+  && grep -q 'Docker Compose precedence' "$ROOT/post-install.txt" \
+  && grep -q 'Docker Compose precedence' "$ROOT/README.md" \
   && grep -q 'laptop and VPS same' "$ROOT/post-install.txt" \
-  && grep -q 'laptop and VPS same' "$ROOT/README.md"; then
-  pass "docs say env init always comments COMPOSE_PROJECT_NAME (laptop and VPS same)"
+  && grep -q 'laptop and VPS same' "$ROOT/README.md" \
+  && ! grep -q 'always comments out' "$ROOT/post-install.txt" \
+  && ! grep -q 'always comments out' "$ROOT/README.md"; then
+  pass "docs say env init sets COMPOSE_PROJECT_NAME=shopware-<shop-id> (laptop and VPS same)"
 else
-  fail "docs missing always-strip COMPOSE_PROJECT_NAME wording"
+  fail "docs missing COMPOSE_PROJECT_NAME=shopware-<shop-id> wording"
 fi
 if grep -q 'env init --shop-id' "$ROOT/post-install.txt"; then
   pass "post-install documents Flex env + env init --shop-id"

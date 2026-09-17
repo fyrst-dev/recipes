@@ -96,7 +96,7 @@ do
   fi
 done
 
-echo "==> env init always-strip; --vps gone"
+echo "==> env init sets COMPOSE_PROJECT_NAME; --vps gone"
 set +e
 out="$(fyrst-cli shopware env init --help 2>&1)"
 rc=$?
