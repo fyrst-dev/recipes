@@ -284,8 +284,14 @@ if grep -q 'always comments out' "$ROOT/post-install.txt" \
   && grep -q 'compose.override.yaml' "$ROOT/README.md" \
   && grep -q 'folder basename' "$ROOT/post-install.txt" \
   && grep -q 'folder basename' "$ROOT/README.md" \
-  && grep -q 'may pin' "$ROOT/post-install.txt" \
-  && grep -q 'may pin' "$ROOT/README.md" \
+  && grep -q 'matching pin' "$ROOT/post-install.txt" \
+  && grep -q 'matching pin' "$ROOT/README.md" \
+  && grep -q -- '--env-file .env.local' "$ROOT/post-install.txt" \
+  && grep -q -- '--env-file .env.local' "$ROOT/README.md" \
+  && grep -q -- '--env-file .env.prod' "$ROOT/post-install.txt" \
+  && grep -q -- '--env-file .env.prod' "$ROOT/README.md" \
+  && ! grep -q 'may pin' "$ROOT/post-install.txt" \
+  && ! grep -q 'may pin' "$ROOT/README.md" \
   && grep -q 'project dev' "$ROOT/post-install.txt" \
   && grep -q 'project dev' "$ROOT/README.md" \
   && ! grep -q 'shopware-acme' "$ROOT/post-install.txt" \

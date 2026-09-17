@@ -63,7 +63,17 @@
     <comment>shopware-</comment> plus shop id) and sets
     <comment>compose.override.yaml</comment> <comment>name:</comment> so
     <comment>shopware-cli project dev</comment> sees that project name.
-    fyrst-cli may pin <comment>-p</comment> on VPS compose.
+    VPS Compose naming SoT is
+    <comment>deploy/compose.yaml</comment>
+    <comment>name: ${SHOPWARE_SHOP_ID}-${SHOPWARE_DEPLOY_ENV}</comment>
+    with host env files loaded:
+    <comment>--env-file .env</comment> then
+    <comment>--env-file .env.local</comment> then
+    <comment>--env-file .env.prod</comment> (if present).
+    Raw operator Compose must use those same
+    <comment>--env-file</comment> flags (not only
+    <comment>.env</comment>). fyrst-cli keeps
+    <comment>-p</comment> only as a matching pin.
     It does not generate <comment>APP_SECRET</comment>
     (<comment>shopware-cli project create</comment> already writes it).
     Shared committed <comment>.env</comment> (required):
