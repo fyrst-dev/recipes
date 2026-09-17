@@ -50,24 +50,28 @@
     <comment>COMPOSE_PROJECT_NAME=shopware-acme</comment>
     for shop id <comment>acme</comment> (formula
     <comment>COMPOSE_PROJECT_NAME=shopware-</comment> plus the shop id;
-    no env suffix). Laptop and VPS same.
-    Local <comment>shopware-cli project dev</comment>
-    and VPS deploy (<comment>--env-file .env</comment>) both load that
-    env var, so the project name is
-    <comment>shopware-acme</comment>, not <comment>acme-live</comment>.
+    no env suffix) for local
+    <comment>shopware-cli project dev</comment> / shop-root compose.
+    It replaces create’s
+    <comment>COMPOSE_PROJECT_NAME=sw-shop-…</comment>.
+    VPS project name stays
+    <comment>${SHOPWARE_SHOP_ID}-${SHOPWARE_DEPLOY_ENV}</comment>
+    (<comment>acme-live</comment>) via deploy Compose
+    <comment>name:</comment>. fyrst-cli pins <comment>-p</comment> or unsets
+    <comment>COMPOSE_PROJECT_NAME</comment> on VPS compose so
+    <comment>.env</comment> does not override. Live and staging on one
+    host stay isolated.
     It does not generate <comment>APP_SECRET</comment>
     (<comment>shopware-cli project create</comment> already writes it).
     VPS <comment>.env</comment> source of truth (required):
     <comment>SHOPWARE_SHOP_ID</comment> (same slug on live + staging + laptop),
     <comment>SHOPWARE_DEPLOY_ENV</comment> (live|staging|playground|dev).
-    Compose <comment>name:</comment> still interpolates
-    <comment>${SHOPWARE_SHOP_ID}-${SHOPWARE_DEPLOY_ENV}</comment>
+    Deploy Compose interpolates project name
+    (<comment>${SHOPWARE_SHOP_ID}-${SHOPWARE_DEPLOY_ENV}</comment>)
     and bind-mount paths from those two plus optional
     <comment>SHOPWARE_DATA_BASE</comment> (default
     <comment>/var/lib/shopware/data</comment>) — three separate interpolations,
-    no nested defaults. With <comment>COMPOSE_PROJECT_NAME</comment> set,
-    that env var wins over Compose <comment>name:</comment> per
-    Docker Compose precedence — intentional for fyrst.
+    no nested defaults.
     <comment>SHOPWARE_DATA_ROOT</comment> remains optional for scripts/docs
     (fyrst-cli derives when unset and prefers it when set —
     do not assign it empty).
@@ -76,7 +80,7 @@
     <comment>.env</comment> for local <comment>project dev</comment>.
     <comment>fyrst-cli shopware env init</comment> replaces that line with
     <comment>COMPOSE_PROJECT_NAME=shopware-acme</comment>
-    (laptop and VPS same).
+    (local project dev only).
     Flex does not delete it on <comment>composer require</comment>
     (create owns the local flow until env init).
     Bootstrap:

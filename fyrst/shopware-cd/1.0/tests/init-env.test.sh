@@ -49,18 +49,24 @@ if ! grep -q 'generate-app-secret' "$ROOT/post-install.txt" \
   && grep -q 'shopware-acme' "$ROOT/post-install.txt" \
   && grep -q 'shopware-acme' "$ROOT/README.md" \
   && grep -q 'shopware-acme' "$REPO_README" \
-  && grep -q -- '--env-file .env' "$ROOT/post-install.txt" \
-  && grep -q -- '--env-file .env' "$ROOT/README.md" \
-  && grep -q -- '--env-file .env' "$REPO_README" \
-  && grep -q 'Docker Compose precedence' "$ROOT/post-install.txt" \
-  && grep -q 'Docker Compose precedence' "$ROOT/README.md" \
-  && grep -q 'Docker Compose precedence' "$REPO_README" \
-  && grep -q 'laptop and VPS same' "$ROOT/post-install.txt" \
-  && grep -q 'laptop and VPS same' "$ROOT/README.md" \
-  && grep -q 'laptop and VPS same' "$REPO_README"; then
-  pass "recipe docs: env init sets COMPOSE_PROJECT_NAME=shopware-<shop-id>; laptop and VPS same"
+  && grep -q 'project dev' "$ROOT/post-install.txt" \
+  && grep -q 'project dev' "$ROOT/README.md" \
+  && grep -q 'project dev' "$REPO_README" \
+  && grep -q 'acme-live' "$ROOT/post-install.txt" \
+  && grep -q 'acme-live' "$ROOT/README.md" \
+  && grep -q 'acme-live' "$REPO_README" \
+  && grep -q 'does not override' "$ROOT/post-install.txt" \
+  && grep -q 'does not override' "$ROOT/README.md" \
+  && grep -q 'does not override' "$REPO_README" \
+  && grep -q 'stay isolated' "$ROOT/post-install.txt" \
+  && grep -q 'stay isolated' "$ROOT/README.md" \
+  && grep -q 'stay isolated' "$REPO_README" \
+  && ! grep -q 'laptop and VPS same' "$ROOT/post-install.txt" \
+  && ! grep -q 'laptop and VPS same' "$ROOT/README.md" \
+  && ! grep -q 'laptop and VPS same' "$REPO_README"; then
+  pass "recipe docs: env init sets COMPOSE_PROJECT_NAME=shopware-<shop-id> for local project dev; VPS stays acme-live"
 else
-  fail "recipe docs still mention --vps / --generate-app-secret / always-strip or miss shopware-<shop-id>"
+  fail "recipe docs still mention --vps / --generate-app-secret / always-strip or miss local-vs-VPS project names"
 fi
 
 echo "==> manifest Flex env (safe defaults) + copy-from-package"
@@ -313,7 +319,7 @@ if [[ "$rc" -eq 0 ]] && grep -q '^COMPOSE_PROJECT_NAME=shopware-widgets$' "$LAP/
   && printf '%s' "$out" | grep -q 'shopware-widgets' \
   && ! printf '%s' "$out" | grep -qE 'commented [0-9]|always comments' \
   && ! printf '%s' "$out" | grep -q -- '--vps'; then
-  pass "laptop env init sets COMPOSE_PROJECT_NAME=shopware-widgets (same as VPS; no env suffix)"
+  pass "laptop env init sets COMPOSE_PROJECT_NAME=shopware-widgets (local project dev; no env suffix)"
 else
   fail "laptop COMPOSE_PROJECT_NAME rc=$rc out=$out env=$(grep COMPOSE_PROJECT_NAME "$LAP/.env" || true)"
 fi
