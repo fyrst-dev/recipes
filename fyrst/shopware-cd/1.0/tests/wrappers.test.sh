@@ -96,7 +96,7 @@ do
   fi
 done
 
-echo "==> env init sets COMPOSE_PROJECT_NAME; --vps gone"
+echo "==> env init comments COMPOSE_PROJECT_NAME; --vps gone"
 set +e
 out="$(fyrst-cli shopware env init --help 2>&1)"
 rc=$?
@@ -126,8 +126,8 @@ cat >"$SHOP/.env" <<'EOF'
 IMAGE=ghcr.io/example/acme
 IMAGE_TAG=tag-b
 SHOPWARE_SHOP_ID=acme
-SHOPWARE_DEPLOY_ENV=dev
 EOF
+printf 'SHOPWARE_DEPLOY_ENV=dev\n' >"$SHOP/.env.local"
 set +e
 out="$(cd "$SHOP" && fyrst-cli shopware sync local --from live --data all --dry-run 2>&1)"
 rc=$?

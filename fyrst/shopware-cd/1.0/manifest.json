@@ -9,7 +9,6 @@
     },
     "env": {
         "SHOPWARE_SHOP_ID": "",
-        "SHOPWARE_DEPLOY_ENV": "live",
         "SHOPWARE_DATA_BASE": "/var/lib/shopware/data"
     }
 }

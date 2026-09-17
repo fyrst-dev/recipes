@@ -40,48 +40,49 @@
 
     Flex may append a <comment>###> fyrst/shopware-cd ###</comment>
     block to shop-root <comment>.env</comment> (empty
-    <comment>SHOPWARE_SHOP_ID</comment>, <comment>SHOPWARE_DEPLOY_ENV=live</comment>,
+    <comment>SHOPWARE_SHOP_ID</comment>,
     <comment>SHOPWARE_DATA_BASE=/var/lib/shopware/data</comment>).
-    It does not overwrite create’s whole <comment>.env</comment>
-    and does not put secrets in that block. Then run
+    It does not put <comment>SHOPWARE_DEPLOY_ENV</comment> in that
+    shared block (host <comment>.env.local</comment> owns deploy env)
+    and does not put secrets there. It does not overwrite
+    create’s whole <comment>.env</comment>. Then run
     <comment>fyrst-cli shopware env init --shop-id …</comment>
     (see <comment>deploy/README</comment>).
-    That command sets
-    <comment>COMPOSE_PROJECT_NAME=shopware-acme</comment>
-    for shop id <comment>acme</comment> (formula
-    <comment>COMPOSE_PROJECT_NAME=shopware-</comment> plus the shop id;
-    no env suffix) for local
-    <comment>shopware-cli project dev</comment> / shop-root compose.
-    It replaces create’s
-    <comment>COMPOSE_PROJECT_NAME=sw-shop-…</comment>.
-    VPS project name stays
+    That command always comments out create’s
+    <comment>COMPOSE_PROJECT_NAME</comment> in committed <comment>.env</comment>
+    (create writes <comment>COMPOSE_PROJECT_NAME=sw-shop-…</comment>).
+    It does not write <comment>COMPOSE_PROJECT_NAME</comment> into
+    <comment>.env</comment>. <comment>--env</comment> writes
+    <comment>SHOPWARE_DEPLOY_ENV</comment> into gitignored
+    <comment>.env.local</comment>, not the shared committed
+    <comment>.env</comment>.
+    VPS Compose project name is
     <comment>${SHOPWARE_SHOP_ID}-${SHOPWARE_DEPLOY_ENV}</comment>
-    (<comment>acme-live</comment>) via deploy Compose
-    <comment>name:</comment>. fyrst-cli pins <comment>-p</comment> or unsets
-    <comment>COMPOSE_PROJECT_NAME</comment> on VPS compose so
-    <comment>.env</comment> does not override. Live and staging on one
-    host stay isolated.
+    (<comment>acme-live</comment>) derived at runtime; fyrst-cli
+    may pin <comment>-p</comment>.
     It does not generate <comment>APP_SECRET</comment>
     (<comment>shopware-cli project create</comment> already writes it).
-    VPS <comment>.env</comment> source of truth (required):
+    Shared committed <comment>.env</comment> (required):
     <comment>SHOPWARE_SHOP_ID</comment> (same slug on live + staging + laptop),
+    optional <comment>SHOPWARE_DATA_BASE</comment> (default
+    <comment>/var/lib/shopware/data</comment>).
+    Host <comment>.env.local</comment> (gitignored):
     <comment>SHOPWARE_DEPLOY_ENV</comment> (live|staging|playground|dev).
     Deploy Compose interpolates project name
     (<comment>${SHOPWARE_SHOP_ID}-${SHOPWARE_DEPLOY_ENV}</comment>)
     and bind-mount paths from those two plus optional
-    <comment>SHOPWARE_DATA_BASE</comment> (default
-    <comment>/var/lib/shopware/data</comment>) — three separate interpolations,
+    <comment>SHOPWARE_DATA_BASE</comment> — three separate interpolations,
     no nested defaults.
     <comment>SHOPWARE_DATA_ROOT</comment> remains optional for scripts/docs
     (fyrst-cli derives when unset and prefers it when set —
     do not assign it empty).
     WARNING: <comment>shopware-cli project create</comment> writes
     <comment>COMPOSE_PROJECT_NAME=sw-shop-…</comment> into shop-root
-    <comment>.env</comment> for local <comment>project dev</comment>.
-    <comment>fyrst-cli shopware env init</comment> replaces that line with
-    <comment>COMPOSE_PROJECT_NAME=shopware-acme</comment>
-    (local project dev only).
-    Flex does not delete it on <comment>composer require</comment>
+    <comment>.env</comment> for local <comment>project dev</comment>. That env var
+    overrides Compose <comment>name:</comment>
+    (<comment>${SHOPWARE_SHOP_ID}-${SHOPWARE_DEPLOY_ENV}</comment>).
+    <comment>fyrst-cli shopware env init</comment> always comments out
+    that line. Flex does not delete it on <comment>composer require</comment>
     (create owns the local flow until env init).
     Bootstrap:
     <comment>DATA="${SHOPWARE_DATA_BASE:-/var/lib/shopware/data}/${SHOPWARE_SHOP_ID}/${SHOPWARE_DEPLOY_ENV}"</comment>
@@ -106,12 +107,15 @@
     does not ship a root Dockerfile. A missing <comment>docker/Dockerfile</comment>
     means <comment>shopware/docker</comment> was skipped.
 
-    Flex may append SoT keys to <comment>.env</comment>; it does not
-    overwrite create’s whole <comment>.env</comment>. Then run
+    Flex may append shop-id / data-base keys to
+    <comment>.env</comment>; it does not overwrite create’s whole
+    <comment>.env</comment>. Then run
     <comment>fyrst-cli shopware env init --shop-id …</comment>
     (see <comment>deploy/README</comment>).
     If <comment>.env</comment> is missing, that command copies
-    <comment>.env.example</comment> first. Commit the copied files;
+    <comment>.env.example</comment> first. <comment>--env</comment> writes
+    <comment>SHOPWARE_DEPLOY_ENV</comment> into gitignored
+    <comment>.env.local</comment>. Commit the copied files;
     <comment>vendor/</comment> is gitignored.
 
     shopware-cli project create writes <comment>.shopware-project.yml</comment>
@@ -129,7 +133,8 @@
     <comment>APP_URL</comment> in shop-root <comment>.env</comment>;
     sync calls
     <comment>bin/console fyrst:sales-channel:rewrite-urls</comment>.
-    Laptop SSH (<comment>SHOPWARE_SSH_*</comment>) belongs in
+    Laptop SSH (<comment>SHOPWARE_SSH_*</comment>) and host
+    <comment>SHOPWARE_DEPLOY_ENV</comment> belong in
     <comment>.env.local</comment>.
     Shops need <comment>composer update fyrst/shopware-cd</comment>
     so the command and bundle exist, then
