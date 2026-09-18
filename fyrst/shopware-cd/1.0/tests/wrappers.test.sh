@@ -181,12 +181,15 @@ REPO_README="$(cd "$ROOT/../../.." && pwd)/README.md"
 if deploy_health_docs_ok "$ROOT/post-install.txt" \
   && deploy_health_docs_ok "$ROOT/README.md" \
   && deploy_health_docs_ok "$REPO_README" \
+  && grep -q 'ROLLBACK_ON_FAIL' "$ROOT/post-install.txt" \
+  && grep -q 'ROLLBACK_ON_FAIL' "$ROOT/README.md" \
+  && grep -q 'ROLLBACK_ON_FAIL' "$REPO_README" \
   && ! grep -qiE 'deprecated alias|still accepted|still works|Optional [`'"'"'<]*SMOKE_URL|SMOKE_URL still' "$ROOT/post-install.txt" \
   && ! grep -qiE 'deprecated alias|still accepted|still works|Optional [`'"'"'<]*SMOKE_URL|SMOKE_URL still' "$ROOT/README.md" \
   && ! grep -qiE 'deprecated alias|still accepted|still works|Optional [`'"'"'<]*SMOKE_URL|SMOKE_URL still' "$REPO_README"; then
-  pass "recipe docs: DEPLOY_HEALTH_URL SoT; live requires a resolvable URL; SMOKE_URL removed"
+  pass "recipe docs: DEPLOY_HEALTH_URL SoT; live requires a resolvable URL; SMOKE_URL / ROLLBACK_ON_SMOKE_FAIL removed"
 else
-  fail "recipe docs missing DEPLOY_HEALTH_URL contract or still treat SMOKE_URL as operator guidance"
+  fail "recipe docs missing DEPLOY_HEALTH_URL / ROLLBACK_ON_FAIL contract or still treat old smoke names as operator guidance"
 fi
 
 if [[ "$FAILS" -ne 0 ]]; then

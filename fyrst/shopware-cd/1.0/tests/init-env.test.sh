@@ -126,7 +126,7 @@ if deploy_health_docs_ok "$ROOT/post-install.txt" \
   && deploy_health_docs_ok "$REPO_README"; then
   pass "recipe docs: DEPLOY_HEALTH_URL + APP_URL health-check default; live requires a resolvable URL"
 else
-  fail "recipe docs missing DEPLOY_HEALTH_URL contract or still treat SMOKE_URL as operator guidance"
+  fail "recipe docs missing DEPLOY_HEALTH_URL / ROLLBACK_ON_FAIL contract or still treat old smoke names as operator guidance"
 fi
 
 echo "==> manifest Flex env (safe defaults) + copy-from-package"

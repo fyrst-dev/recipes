@@ -68,14 +68,17 @@ if deploy_health_docs_ok "$ROOT/post-install.txt" \
   && deploy_health_docs_ok "$REPO_README"; then
   pass "recipe docs: DEPLOY_HEALTH_URL SoT; APP_URL + /api/_info/health-check default; live requires a resolvable URL"
 else
-  fail "recipe docs missing DEPLOY_HEALTH_URL contract or still treat SMOKE_URL as operator guidance"
+  fail "recipe docs missing DEPLOY_HEALTH_URL / ROLLBACK_ON_FAIL contract or still treat old smoke names as operator guidance"
 fi
 if ! grep -qiE 'deprecated alias|still accepted|still works|Optional [`'"'"'<]*SMOKE_URL|SMOKE_URL still' "$ROOT/post-install.txt" \
   && ! grep -qiE 'deprecated alias|still accepted|still works|Optional [`'"'"'<]*SMOKE_URL|SMOKE_URL still' "$ROOT/README.md" \
-  && ! grep -qiE 'deprecated alias|still accepted|still works|Optional [`'"'"'<]*SMOKE_URL|SMOKE_URL still' "$REPO_README"; then
-  pass "recipe docs do not say SMOKE_URL still works"
+  && ! grep -qiE 'deprecated alias|still accepted|still works|Optional [`'"'"'<]*SMOKE_URL|SMOKE_URL still' "$REPO_README" \
+  && grep -q 'ROLLBACK_ON_FAIL' "$ROOT/post-install.txt" \
+  && grep -q 'ROLLBACK_ON_FAIL' "$ROOT/README.md" \
+  && grep -q 'ROLLBACK_ON_FAIL' "$REPO_README"; then
+  pass "recipe docs do not say SMOKE_URL still works; auto-rollback is ROLLBACK_ON_FAIL"
 else
-  fail "recipe docs still document SMOKE_URL as operator-facing probe guidance"
+  fail "recipe docs still document SMOKE_URL / ROLLBACK_ON_SMOKE_FAIL as operator-facing guidance"
 fi
 
 echo "==> fixture (no docker; real fyrst-cli)"
@@ -108,6 +111,12 @@ if deploy_health_docs_ok "$SMOKE_SOT"; then
   fail "deploy_health_docs_ok accepted deprecated SMOKE_URL alias docs"
 else
   pass "deploy_health_docs_ok rejects deprecated-alias SMOKE_URL guidance"
+fi
+printf 'Auto-rollback still uses `ROLLBACK_ON_SMOKE_FAIL`.\nDEPLOY_HEALTH_URL\n/api/_info/health-check\nAPP_URL\n--allow-no-deploy-health\nALLOW_NO_DEPLOY_HEALTH\nrequires a resolvable\nROLLBACK_ON_FAIL\n' >"$SMOKE_SOT"
+if deploy_health_docs_ok "$SMOKE_SOT"; then
+  fail "deploy_health_docs_ok accepted ROLLBACK_ON_SMOKE_FAIL as operator SoT"
+else
+  pass "deploy_health_docs_ok rejects ROLLBACK_ON_SMOKE_FAIL as auto-rollback SoT"
 fi
 
 set +e
