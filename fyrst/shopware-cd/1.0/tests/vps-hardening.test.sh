@@ -68,17 +68,14 @@ if deploy_health_docs_ok "$ROOT/post-install.txt" \
   && deploy_health_docs_ok "$REPO_README"; then
   pass "recipe docs: DEPLOY_HEALTH_URL SoT; APP_URL + /api/_info/health-check default; live requires a resolvable URL"
 else
-  fail "recipe docs missing DEPLOY_HEALTH_URL contract or still treat SMOKE_URL as SoT"
+  fail "recipe docs missing DEPLOY_HEALTH_URL contract or still treat SMOKE_URL as operator guidance"
 fi
-if grep -q 'DEPLOY_HEALTH_URL' "$ROOT/post-install.txt" \
-  && grep -q 'DEPLOY_HEALTH_URL' "$ROOT/README.md" \
-  && grep -q 'DEPLOY_HEALTH_URL' "$REPO_README" \
-  && ! grep -qE 'Optional [`'"'"'<]*SMOKE_URL' "$ROOT/post-install.txt" \
-  && ! grep -qE 'Optional [`'"'"'<]*SMOKE_URL' "$ROOT/README.md" \
-  && ! grep -qE 'Optional [`'"'"'<]*SMOKE_URL' "$REPO_README"; then
-  pass "recipe docs reject SMOKE_URL-only as the post-deploy probe SoT"
+if ! grep -qiE 'deprecated alias|still accepted|still works|Optional [`'"'"'<]*SMOKE_URL|SMOKE_URL still' "$ROOT/post-install.txt" \
+  && ! grep -qiE 'deprecated alias|still accepted|still works|Optional [`'"'"'<]*SMOKE_URL|SMOKE_URL still' "$ROOT/README.md" \
+  && ! grep -qiE 'deprecated alias|still accepted|still works|Optional [`'"'"'<]*SMOKE_URL|SMOKE_URL still' "$REPO_README"; then
+  pass "recipe docs do not say SMOKE_URL still works"
 else
-  fail "recipe docs still document SMOKE_URL as the operator-facing probe SoT"
+  fail "recipe docs still document SMOKE_URL as operator-facing probe guidance"
 fi
 
 echo "==> fixture (no docker; real fyrst-cli)"
@@ -98,13 +95,19 @@ EOF
 printf 'SHOPWARE_DEPLOY_ENV=live\n' >"$SHOP/.env.local"
 : >"$SHOP/.env.prod"
 
-echo "==> reject SMOKE_URL-only docs as probe SoT"
+echo "==> reject SMOKE_URL operator guidance"
 SMOKE_SOT="$TMP/smoke-sot.md"
 printf 'Optional `SMOKE_URL` check. Writes `.deployed-tag` only after success.\n' >"$SMOKE_SOT"
 if deploy_health_docs_ok "$SMOKE_SOT"; then
   fail "deploy_health_docs_ok accepted SMOKE_URL-only docs"
 else
-  pass "deploy_health_docs_ok rejects docs that only document SMOKE_URL as SoT"
+  pass "deploy_health_docs_ok rejects docs that only document SMOKE_URL"
+fi
+printf 'Override with `DEPLOY_HEALTH_URL`. `SMOKE_URL` is a deprecated alias.\n' >"$SMOKE_SOT"
+if deploy_health_docs_ok "$SMOKE_SOT"; then
+  fail "deploy_health_docs_ok accepted deprecated SMOKE_URL alias docs"
+else
+  pass "deploy_health_docs_ok rejects deprecated-alias SMOKE_URL guidance"
 fi
 
 set +e
@@ -310,15 +313,36 @@ EOF
   else
     fail "DEPLOY_HEALTH_URL override rc=$rc out=$out"
   fi
+  LIVE_SMOKE_ONLY="$TMP/live-smoke-only"
+  write_stub_compose "$LIVE_SMOKE_ONLY"
+  cat >"$LIVE_SMOKE_ONLY/.env" <<'EOF'
+IMAGE=ghcr.io/example/acme
+IMAGE_TAG=tag-b
+SHOPWARE_SHOP_ID=acme
+APP_URL=
+SMOKE_URL=http://127.0.0.1:9/legacy
+EOF
+  printf 'SHOPWARE_DEPLOY_ENV=live\n' >"$LIVE_SMOKE_ONLY/.env.local"
+  : >"$LIVE_SMOKE_ONLY/.env.prod"
+  set +e
+  out="$(cd "$LIVE_SMOKE_ONLY" && fyrst-cli shopware deploy release --dry-run 2>&1)"
+  rc=$?
+  set -e
+  if [[ "$rc" -ne 0 ]] && printf '%s' "$out" | grep -qiE 'DEPLOY_HEALTH_URL|APP_URL|resolvable|health' \
+    && ! printf '%s' "$out" | grep -q 'http://127.0.0.1:9/legacy'; then
+    pass "live leftover SMOKE_URL is ignored (not a probe)"
+  else
+    fail "live SMOKE_URL leftover rc=$rc out=$out"
+  fi
   set +e
   out="$(cd "$SHOP" && SMOKE_URL=http://127.0.0.1:9/legacy fyrst-cli shopware deploy release --dry-run 2>&1)"
   rc=$?
   set -e
-  if [[ "$rc" -eq 0 ]] && printf '%s' "$out" | grep -q 'http://127.0.0.1:9/legacy' \
-    && printf '%s' "$out" | grep -qiE 'deprecated|DEPLOY_HEALTH_URL'; then
-    pass "SMOKE_URL still probes but is documented as a deprecated alias"
+  if [[ "$rc" -eq 0 ]] && printf '%s' "$out" | grep -q 'https://shop.example/api/_info/health-check' \
+    && ! printf '%s' "$out" | grep -q 'http://127.0.0.1:9/legacy'; then
+    pass "SMOKE_URL does not override APP_URL default probe"
   else
-    fail "SMOKE_URL alias rc=$rc out=$out"
+    fail "SMOKE_URL must not probe rc=$rc out=$out"
   fi
   STAGING_NO_URL="$TMP/staging-no-health"
   write_stub_compose "$STAGING_NO_URL"

@@ -176,17 +176,17 @@ else
   fail "recipe docs still document bash wrappers, copy-from-recipe, --vps, or --generate-app-secret"
 fi
 
-echo "==> recipe docs: DEPLOY_HEALTH_URL is post-deploy probe SoT (not SMOKE_URL)"
+echo "==> recipe docs: DEPLOY_HEALTH_URL is post-deploy probe SoT (SMOKE_URL removed)"
 REPO_README="$(cd "$ROOT/../../.." && pwd)/README.md"
 if deploy_health_docs_ok "$ROOT/post-install.txt" \
   && deploy_health_docs_ok "$ROOT/README.md" \
   && deploy_health_docs_ok "$REPO_README" \
-  && ! grep -qE 'Optional [`'"'"'<]*SMOKE_URL' "$ROOT/post-install.txt" \
-  && ! grep -qE 'Optional [`'"'"'<]*SMOKE_URL' "$ROOT/README.md" \
-  && ! grep -qE 'Optional [`'"'"'<]*SMOKE_URL' "$REPO_README"; then
-  pass "recipe docs: DEPLOY_HEALTH_URL SoT; live requires a resolvable URL"
+  && ! grep -qiE 'deprecated alias|still accepted|still works|Optional [`'"'"'<]*SMOKE_URL|SMOKE_URL still' "$ROOT/post-install.txt" \
+  && ! grep -qiE 'deprecated alias|still accepted|still works|Optional [`'"'"'<]*SMOKE_URL|SMOKE_URL still' "$ROOT/README.md" \
+  && ! grep -qiE 'deprecated alias|still accepted|still works|Optional [`'"'"'<]*SMOKE_URL|SMOKE_URL still' "$REPO_README"; then
+  pass "recipe docs: DEPLOY_HEALTH_URL SoT; live requires a resolvable URL; SMOKE_URL removed"
 else
-  fail "recipe docs missing DEPLOY_HEALTH_URL contract or still treat SMOKE_URL as SoT"
+  fail "recipe docs missing DEPLOY_HEALTH_URL contract or still treat SMOKE_URL as operator guidance"
 fi
 
 if [[ "$FAILS" -ne 0 ]]; then

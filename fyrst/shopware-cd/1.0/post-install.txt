@@ -41,9 +41,8 @@
     <comment>--allow-no-deploy-health</comment> or
     <comment>ALLOW_NO_DEPLOY_HEALTH=1</comment>.
     Non-live: the probe is optional when no URL can be
-    resolved. <comment>SMOKE_URL</comment> is a deprecated
-    alias for <comment>DEPLOY_HEALTH_URL</comment> (not the
-    operator SoT). Auto-rollback still uses
+    resolved. Do not use <comment>SMOKE_URL</comment>;
+    removed. Auto-rollback still uses
     <comment>ROLLBACK_ON_SMOKE_FAIL</comment>.
     TLS edge: <comment>deploy/edge/Caddyfile</comment>.
     Live → local project dev rsync (no DB):

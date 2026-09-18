@@ -30,7 +30,9 @@ require_fyrst_cli() {
 }
 
 # Operator-facing SoT is DEPLOY_HEALTH_URL (APP_URL + /api/_info/health-check
-# default). SMOKE_URL may appear only as a deprecated alias.
+# default). SMOKE_URL is removed — no alias. A one-line “do not use
+# SMOKE_URL; removed” notice is allowed; anything that says it still
+# works is not.
 # Returns 0 if $1 documents the locked contract.
 deploy_health_docs_ok() {
   local f="$1"
@@ -41,10 +43,10 @@ deploy_health_docs_ok() {
     && grep -q 'ALLOW_NO_DEPLOY_HEALTH' "$f" \
     && grep -q 'requires a resolvable' "$f" \
     && grep -q 'ROLLBACK_ON_SMOKE_FAIL' "$f" \
-    && ! grep -qE 'Optional [`'"'"'<]*SMOKE_URL' "$f" \
+    && ! grep -qiE 'deprecated alias|still accepted|still works|Optional [`'"'"'<]*SMOKE_URL|SMOKE_URL still' "$f" \
     && {
       if grep -q 'SMOKE_URL' "$f"; then
-        grep -qiE 'deprecated|alias' "$f"
+        grep -qiE 'do not use.{0,80}SMOKE_URL|SMOKE_URL.{0,80}removed' "$f"
       else
         true
       fi
