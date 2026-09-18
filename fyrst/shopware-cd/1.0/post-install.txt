@@ -31,6 +31,19 @@
     CI runs <comment>fyrst-cli shopware deploy release</comment>
     with <comment>IMAGE</comment> / <comment>IMAGE_TAG</comment> /
     <comment>COMPOSE_DIR</comment>.
+    Post-deploy probe (release / rollback): default is
+    <comment>APP_URL</comment> (trailing slash stripped) plus
+    <comment>/api/_info/health-check</comment>
+    (same path as the Compose <comment>web</comment> healthcheck).
+    Override with <comment>DEPLOY_HEALTH_URL</comment>
+    (full URL as-is, e.g. loopback).
+    Live requires a resolvable probe URL unless
+    <comment>--allow-no-deploy-health</comment> or
+    <comment>ALLOW_NO_DEPLOY_HEALTH=1</comment>.
+    Non-live: the probe is optional when no URL can be
+    resolved. Do not use <comment>SMOKE_URL</comment> or
+    <comment>ROLLBACK_ON_SMOKE_FAIL</comment>; removed.
+    Auto-rollback uses <comment>ROLLBACK_ON_FAIL</comment>.
     TLS edge: <comment>deploy/edge/Caddyfile</comment>.
     Live → local project dev rsync (no DB):
     <comment>fyrst-cli shopware sync local</comment>

@@ -62,6 +62,24 @@ if grep -qi 'not a backup' "$ROOT/README.md" || grep -qi 'not a backup' "$ROOT/p
 else
   fail "recipe docs missing sync ≠ backup"
 fi
+REPO_README="$(cd "$ROOT/../../.." && pwd)/README.md"
+if deploy_health_docs_ok "$ROOT/post-install.txt" \
+  && deploy_health_docs_ok "$ROOT/README.md" \
+  && deploy_health_docs_ok "$REPO_README"; then
+  pass "recipe docs: DEPLOY_HEALTH_URL SoT; APP_URL + /api/_info/health-check default; live requires a resolvable URL"
+else
+  fail "recipe docs missing DEPLOY_HEALTH_URL / ROLLBACK_ON_FAIL contract or still treat old smoke names as operator guidance"
+fi
+if ! grep -qiE 'deprecated alias|still accepted|still works|Optional [`'"'"'<]*SMOKE_URL|SMOKE_URL still' "$ROOT/post-install.txt" \
+  && ! grep -qiE 'deprecated alias|still accepted|still works|Optional [`'"'"'<]*SMOKE_URL|SMOKE_URL still' "$ROOT/README.md" \
+  && ! grep -qiE 'deprecated alias|still accepted|still works|Optional [`'"'"'<]*SMOKE_URL|SMOKE_URL still' "$REPO_README" \
+  && grep -q 'ROLLBACK_ON_FAIL' "$ROOT/post-install.txt" \
+  && grep -q 'ROLLBACK_ON_FAIL' "$ROOT/README.md" \
+  && grep -q 'ROLLBACK_ON_FAIL' "$REPO_README"; then
+  pass "recipe docs do not say SMOKE_URL still works; auto-rollback is ROLLBACK_ON_FAIL"
+else
+  fail "recipe docs still document SMOKE_URL / ROLLBACK_ON_SMOKE_FAIL as operator-facing guidance"
+fi
 
 echo "==> fixture (no docker; real fyrst-cli)"
 TMP="$(mktemp -d)"
@@ -72,12 +90,34 @@ cat >"$SHOP/.env" <<'EOF'
 IMAGE=ghcr.io/example/acme
 IMAGE_TAG=tag-b
 SHOPWARE_SHOP_ID=acme
+APP_URL=https://shop.example/
 MYSQL_USER=shopware
 MYSQL_PASSWORD=s3cret-not-in-logs
 MYSQL_ROOT_PASSWORD=root-not-in-logs
 EOF
 printf 'SHOPWARE_DEPLOY_ENV=live\n' >"$SHOP/.env.local"
 : >"$SHOP/.env.prod"
+
+echo "==> reject SMOKE_URL operator guidance"
+SMOKE_SOT="$TMP/smoke-sot.md"
+printf 'Optional `SMOKE_URL` check. Writes `.deployed-tag` only after success.\n' >"$SMOKE_SOT"
+if deploy_health_docs_ok "$SMOKE_SOT"; then
+  fail "deploy_health_docs_ok accepted SMOKE_URL-only docs"
+else
+  pass "deploy_health_docs_ok rejects docs that only document SMOKE_URL"
+fi
+printf 'Override with `DEPLOY_HEALTH_URL`. `SMOKE_URL` is a deprecated alias.\n' >"$SMOKE_SOT"
+if deploy_health_docs_ok "$SMOKE_SOT"; then
+  fail "deploy_health_docs_ok accepted deprecated SMOKE_URL alias docs"
+else
+  pass "deploy_health_docs_ok rejects deprecated-alias SMOKE_URL guidance"
+fi
+printf 'Auto-rollback still uses `ROLLBACK_ON_SMOKE_FAIL`.\nDEPLOY_HEALTH_URL\n/api/_info/health-check\nAPP_URL\n--allow-no-deploy-health\nALLOW_NO_DEPLOY_HEALTH\nrequires a resolvable\nROLLBACK_ON_FAIL\n' >"$SMOKE_SOT"
+if deploy_health_docs_ok "$SMOKE_SOT"; then
+  fail "deploy_health_docs_ok accepted ROLLBACK_ON_SMOKE_FAIL as operator SoT"
+else
+  pass "deploy_health_docs_ok rejects ROLLBACK_ON_SMOKE_FAIL as auto-rollback SoT"
+fi
 
 set +e
 out="$(cd "$SHOP" && fyrst-cli shopware deploy rollback --dry-run 2>&1)"
@@ -213,6 +253,132 @@ if [[ "$down" -ne 0 ]]; then
   pass "curl probe fails when nothing listens on the port"
 else
   fail "curl probe should fail when port is down"
+fi
+
+echo "==> fyrst-cli post-deploy health (DEPLOY_HEALTH_URL / APP_URL default)"
+set +e
+rel_help="$(fyrst-cli shopware deploy release --help 2>&1)"
+rel_help_rc=$?
+set -e
+if fyrst_cli_has_deploy_health; then
+  if [[ "$rel_help_rc" -eq 0 ]] && printf '%s' "$rel_help" | grep -q -- '--allow-no-deploy-health'; then
+    pass "deploy release --help documents --allow-no-deploy-health"
+  else
+    fail "deploy release --help missing --allow-no-deploy-health rc=$rel_help_rc out=$rel_help"
+  fi
+  LIVE_NO_URL="$TMP/live-no-health"
+  write_stub_compose "$LIVE_NO_URL"
+  cat >"$LIVE_NO_URL/.env" <<'EOF'
+IMAGE=ghcr.io/example/acme
+IMAGE_TAG=tag-b
+SHOPWARE_SHOP_ID=acme
+APP_URL=
+EOF
+  printf 'SHOPWARE_DEPLOY_ENV=live\n' >"$LIVE_NO_URL/.env.local"
+  : >"$LIVE_NO_URL/.env.prod"
+  set +e
+  out="$(cd "$LIVE_NO_URL" && fyrst-cli shopware deploy release --dry-run 2>&1)"
+  rc=$?
+  set -e
+  if [[ "$rc" -ne 0 ]] && printf '%s' "$out" | grep -qiE 'DEPLOY_HEALTH_URL|APP_URL|resolvable|health'; then
+    pass "live dry-run refuses when no resolvable probe URL"
+  else
+    fail "live without probe URL rc=$rc out=$out"
+  fi
+  set +e
+  out="$(cd "$LIVE_NO_URL" && fyrst-cli shopware deploy release --dry-run --allow-no-deploy-health 2>&1)"
+  rc=$?
+  set -e
+  if [[ "$rc" -eq 0 ]] && printf '%s' "$out" | grep -q 'DRY-RUN'; then
+    pass "live --allow-no-deploy-health dry-run proceeds without a probe URL"
+  else
+    fail "live --allow-no-deploy-health rc=$rc out=$out"
+  fi
+  set +e
+  out="$(cd "$LIVE_NO_URL" && ALLOW_NO_DEPLOY_HEALTH=1 fyrst-cli shopware deploy release --dry-run 2>&1)"
+  rc=$?
+  set -e
+  if [[ "$rc" -eq 0 ]] && printf '%s' "$out" | grep -q 'DRY-RUN'; then
+    pass "live ALLOW_NO_DEPLOY_HEALTH=1 dry-run proceeds without a probe URL"
+  else
+    fail "live ALLOW_NO_DEPLOY_HEALTH=1 rc=$rc out=$out"
+  fi
+  set +e
+  out="$(cd "$SHOP" && fyrst-cli shopware deploy release --dry-run 2>&1)"
+  rc=$?
+  set -e
+  if [[ "$rc" -eq 0 ]] && printf '%s' "$out" | grep -q 'https://shop.example/api/_info/health-check'; then
+    pass "live dry-run default probe is APP_URL + /api/_info/health-check"
+  else
+    fail "live APP_URL default probe rc=$rc out=$out"
+  fi
+  set +e
+  out="$(cd "$SHOP" && DEPLOY_HEALTH_URL=http://127.0.0.1:18080/api/_info/health-check fyrst-cli shopware deploy release --dry-run 2>&1)"
+  rc=$?
+  set -e
+  if [[ "$rc" -eq 0 ]] && printf '%s' "$out" | grep -q 'http://127.0.0.1:18080/api/_info/health-check' \
+    && ! printf '%s' "$out" | grep -q 'https://shop.example/api/_info/health-check'; then
+    pass "DEPLOY_HEALTH_URL override is used as-is"
+  else
+    fail "DEPLOY_HEALTH_URL override rc=$rc out=$out"
+  fi
+  LIVE_SMOKE_ONLY="$TMP/live-smoke-only"
+  write_stub_compose "$LIVE_SMOKE_ONLY"
+  cat >"$LIVE_SMOKE_ONLY/.env" <<'EOF'
+IMAGE=ghcr.io/example/acme
+IMAGE_TAG=tag-b
+SHOPWARE_SHOP_ID=acme
+APP_URL=
+SMOKE_URL=http://127.0.0.1:9/legacy
+EOF
+  printf 'SHOPWARE_DEPLOY_ENV=live\n' >"$LIVE_SMOKE_ONLY/.env.local"
+  : >"$LIVE_SMOKE_ONLY/.env.prod"
+  set +e
+  out="$(cd "$LIVE_SMOKE_ONLY" && fyrst-cli shopware deploy release --dry-run 2>&1)"
+  rc=$?
+  set -e
+  if [[ "$rc" -ne 0 ]] && printf '%s' "$out" | grep -qiE 'DEPLOY_HEALTH_URL|APP_URL|resolvable|health' \
+    && ! printf '%s' "$out" | grep -q 'http://127.0.0.1:9/legacy'; then
+    pass "live leftover SMOKE_URL is ignored (not a probe)"
+  else
+    fail "live SMOKE_URL leftover rc=$rc out=$out"
+  fi
+  set +e
+  out="$(cd "$SHOP" && SMOKE_URL=http://127.0.0.1:9/legacy fyrst-cli shopware deploy release --dry-run 2>&1)"
+  rc=$?
+  set -e
+  if [[ "$rc" -eq 0 ]] && printf '%s' "$out" | grep -q 'https://shop.example/api/_info/health-check' \
+    && ! printf '%s' "$out" | grep -q 'http://127.0.0.1:9/legacy'; then
+    pass "SMOKE_URL does not override APP_URL default probe"
+  else
+    fail "SMOKE_URL must not probe rc=$rc out=$out"
+  fi
+  STAGING_NO_URL="$TMP/staging-no-health"
+  write_stub_compose "$STAGING_NO_URL"
+  cat >"$STAGING_NO_URL/.env" <<'EOF'
+IMAGE=ghcr.io/example/acme
+IMAGE_TAG=tag-b
+SHOPWARE_SHOP_ID=acme
+APP_URL=
+EOF
+  printf 'SHOPWARE_DEPLOY_ENV=staging\n' >"$STAGING_NO_URL/.env.local"
+  : >"$STAGING_NO_URL/.env.prod"
+  set +e
+  out="$(cd "$STAGING_NO_URL" && fyrst-cli shopware deploy release --dry-run 2>&1)"
+  rc=$?
+  set -e
+  if [[ "$rc" -eq 0 ]] && printf '%s' "$out" | grep -q 'DRY-RUN'; then
+    pass "non-live dry-run is optional when no probe URL can be resolved"
+  else
+    fail "staging without probe URL rc=$rc out=$out"
+  fi
+else
+  echo "==> skipping fyrst-cli DEPLOY_HEALTH_URL behaviour (CLI help has no --allow-no-deploy-health yet)"
+  if [[ "$rel_help_rc" -eq 0 ]]; then
+    pass "deploy release --help still works (health flag lands in parallel CLI)"
+  else
+    fail "deploy release --help rc=$rel_help_rc out=$rel_help"
+  fi
 fi
 
 echo "==> live Compose profiles warning (#18)"

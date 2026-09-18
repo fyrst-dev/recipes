@@ -28,3 +28,40 @@ require_fyrst_cli() {
     exit 1
   fi
 }
+
+# Operator-facing SoT is DEPLOY_HEALTH_URL (APP_URL + /api/_info/health-check
+# default) and ROLLBACK_ON_FAIL. SMOKE_URL and ROLLBACK_ON_SMOKE_FAIL are
+# removed — no aliases. A one-line “do not use …; removed” notice is
+# allowed; anything that says the old names still work is not.
+# Returns 0 if $1 documents the locked contract.
+deploy_health_docs_ok() {
+  local f="$1"
+  grep -q 'DEPLOY_HEALTH_URL' "$f" \
+    && grep -q '/api/_info/health-check' "$f" \
+    && grep -q 'APP_URL' "$f" \
+    && grep -q -- '--allow-no-deploy-health' "$f" \
+    && grep -q 'ALLOW_NO_DEPLOY_HEALTH' "$f" \
+    && grep -q 'requires a resolvable' "$f" \
+    && grep -q 'ROLLBACK_ON_FAIL' "$f" \
+    && ! grep -qiE 'deprecated alias|still accepted|still works|Optional [`'"'"'<]*SMOKE_URL|SMOKE_URL still' "$f" \
+    && {
+      if grep -q 'SMOKE_URL' "$f"; then
+        grep -qiE 'do not use.{0,80}SMOKE_URL|SMOKE_URL.{0,80}removed' "$f"
+      else
+        true
+      fi
+    } \
+    && {
+      if grep -q 'ROLLBACK_ON_SMOKE_FAIL' "$f"; then
+        grep -qiE 'do not use.{0,120}ROLLBACK_ON_SMOKE_FAIL|ROLLBACK_ON_SMOKE_FAIL.{0,80}removed' "$f"
+      else
+        true
+      fi
+    }
+}
+
+# True when the installed fyrst-cli documents the new probe contract.
+fyrst_cli_has_deploy_health() {
+  command -v fyrst-cli >/dev/null 2>&1 \
+    && fyrst-cli shopware deploy release --help 2>&1 | grep -q -- '--allow-no-deploy-health'
+}

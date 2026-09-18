@@ -95,6 +95,17 @@ do
     fail "fyrst-cli $cmd rc=$rc out=$out"
   fi
 done
+if fyrst_cli_has_deploy_health; then
+  set +e
+  out="$(fyrst-cli shopware deploy release --help 2>&1)"
+  rc=$?
+  set -e
+  if [[ "$rc" -eq 0 ]] && printf '%s' "$out" | grep -q -- '--allow-no-deploy-health'; then
+    pass "deploy release --help documents --allow-no-deploy-health"
+  else
+    fail "deploy release --help missing --allow-no-deploy-health rc=$rc out=$out"
+  fi
+fi
 
 echo "==> env init comments COMPOSE_PROJECT_NAME; --vps gone"
 set +e
@@ -163,6 +174,22 @@ if grep -q 'fyrst-cli shopware deploy release' "$ROOT/post-install.txt" \
   pass "recipe docs are fyrst-cli lifecycle verbs (no wrappers / --vps / copy-from-recipe)"
 else
   fail "recipe docs still document bash wrappers, copy-from-recipe, --vps, or --generate-app-secret"
+fi
+
+echo "==> recipe docs: DEPLOY_HEALTH_URL is post-deploy probe SoT (SMOKE_URL removed)"
+REPO_README="$(cd "$ROOT/../../.." && pwd)/README.md"
+if deploy_health_docs_ok "$ROOT/post-install.txt" \
+  && deploy_health_docs_ok "$ROOT/README.md" \
+  && deploy_health_docs_ok "$REPO_README" \
+  && grep -q 'ROLLBACK_ON_FAIL' "$ROOT/post-install.txt" \
+  && grep -q 'ROLLBACK_ON_FAIL' "$ROOT/README.md" \
+  && grep -q 'ROLLBACK_ON_FAIL' "$REPO_README" \
+  && ! grep -qiE 'deprecated alias|still accepted|still works|Optional [`'"'"'<]*SMOKE_URL|SMOKE_URL still' "$ROOT/post-install.txt" \
+  && ! grep -qiE 'deprecated alias|still accepted|still works|Optional [`'"'"'<]*SMOKE_URL|SMOKE_URL still' "$ROOT/README.md" \
+  && ! grep -qiE 'deprecated alias|still accepted|still works|Optional [`'"'"'<]*SMOKE_URL|SMOKE_URL still' "$REPO_README"; then
+  pass "recipe docs: DEPLOY_HEALTH_URL SoT; live requires a resolvable URL; SMOKE_URL / ROLLBACK_ON_SMOKE_FAIL removed"
+else
+  fail "recipe docs missing DEPLOY_HEALTH_URL / ROLLBACK_ON_FAIL contract or still treat old smoke names as operator guidance"
 fi
 
 if [[ "$FAILS" -ne 0 ]]; then
