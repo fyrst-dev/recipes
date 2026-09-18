@@ -95,6 +95,17 @@ do
     fail "fyrst-cli $cmd rc=$rc out=$out"
   fi
 done
+if fyrst_cli_has_deploy_health; then
+  set +e
+  out="$(fyrst-cli shopware deploy release --help 2>&1)"
+  rc=$?
+  set -e
+  if [[ "$rc" -eq 0 ]] && printf '%s' "$out" | grep -q -- '--allow-no-deploy-health'; then
+    pass "deploy release --help documents --allow-no-deploy-health"
+  else
+    fail "deploy release --help missing --allow-no-deploy-health rc=$rc out=$out"
+  fi
+fi
 
 echo "==> env init comments COMPOSE_PROJECT_NAME; --vps gone"
 set +e
@@ -163,6 +174,19 @@ if grep -q 'fyrst-cli shopware deploy release' "$ROOT/post-install.txt" \
   pass "recipe docs are fyrst-cli lifecycle verbs (no wrappers / --vps / copy-from-recipe)"
 else
   fail "recipe docs still document bash wrappers, copy-from-recipe, --vps, or --generate-app-secret"
+fi
+
+echo "==> recipe docs: DEPLOY_HEALTH_URL is post-deploy probe SoT (not SMOKE_URL)"
+REPO_README="$(cd "$ROOT/../../.." && pwd)/README.md"
+if deploy_health_docs_ok "$ROOT/post-install.txt" \
+  && deploy_health_docs_ok "$ROOT/README.md" \
+  && deploy_health_docs_ok "$REPO_README" \
+  && ! grep -qE 'Optional [`'"'"'<]*SMOKE_URL' "$ROOT/post-install.txt" \
+  && ! grep -qE 'Optional [`'"'"'<]*SMOKE_URL' "$ROOT/README.md" \
+  && ! grep -qE 'Optional [`'"'"'<]*SMOKE_URL' "$REPO_README"; then
+  pass "recipe docs: DEPLOY_HEALTH_URL SoT; live requires a resolvable URL"
+else
+  fail "recipe docs missing DEPLOY_HEALTH_URL contract or still treat SMOKE_URL as SoT"
 fi
 
 if [[ "$FAILS" -ne 0 ]]; then

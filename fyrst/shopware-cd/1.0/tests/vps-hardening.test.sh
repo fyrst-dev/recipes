@@ -62,6 +62,24 @@ if grep -qi 'not a backup' "$ROOT/README.md" || grep -qi 'not a backup' "$ROOT/p
 else
   fail "recipe docs missing sync ≠ backup"
 fi
+REPO_README="$(cd "$ROOT/../../.." && pwd)/README.md"
+if deploy_health_docs_ok "$ROOT/post-install.txt" \
+  && deploy_health_docs_ok "$ROOT/README.md" \
+  && deploy_health_docs_ok "$REPO_README"; then
+  pass "recipe docs: DEPLOY_HEALTH_URL SoT; APP_URL + /api/_info/health-check default; live requires a resolvable URL"
+else
+  fail "recipe docs missing DEPLOY_HEALTH_URL contract or still treat SMOKE_URL as SoT"
+fi
+if grep -q 'DEPLOY_HEALTH_URL' "$ROOT/post-install.txt" \
+  && grep -q 'DEPLOY_HEALTH_URL' "$ROOT/README.md" \
+  && grep -q 'DEPLOY_HEALTH_URL' "$REPO_README" \
+  && ! grep -qE 'Optional [`'"'"'<]*SMOKE_URL' "$ROOT/post-install.txt" \
+  && ! grep -qE 'Optional [`'"'"'<]*SMOKE_URL' "$ROOT/README.md" \
+  && ! grep -qE 'Optional [`'"'"'<]*SMOKE_URL' "$REPO_README"; then
+  pass "recipe docs reject SMOKE_URL-only as the post-deploy probe SoT"
+else
+  fail "recipe docs still document SMOKE_URL as the operator-facing probe SoT"
+fi
 
 echo "==> fixture (no docker; real fyrst-cli)"
 TMP="$(mktemp -d)"
@@ -72,12 +90,22 @@ cat >"$SHOP/.env" <<'EOF'
 IMAGE=ghcr.io/example/acme
 IMAGE_TAG=tag-b
 SHOPWARE_SHOP_ID=acme
+APP_URL=https://shop.example/
 MYSQL_USER=shopware
 MYSQL_PASSWORD=s3cret-not-in-logs
 MYSQL_ROOT_PASSWORD=root-not-in-logs
 EOF
 printf 'SHOPWARE_DEPLOY_ENV=live\n' >"$SHOP/.env.local"
 : >"$SHOP/.env.prod"
+
+echo "==> reject SMOKE_URL-only docs as probe SoT"
+SMOKE_SOT="$TMP/smoke-sot.md"
+printf 'Optional `SMOKE_URL` check. Writes `.deployed-tag` only after success.\n' >"$SMOKE_SOT"
+if deploy_health_docs_ok "$SMOKE_SOT"; then
+  fail "deploy_health_docs_ok accepted SMOKE_URL-only docs"
+else
+  pass "deploy_health_docs_ok rejects docs that only document SMOKE_URL as SoT"
+fi
 
 set +e
 out="$(cd "$SHOP" && fyrst-cli shopware deploy rollback --dry-run 2>&1)"
@@ -213,6 +241,111 @@ if [[ "$down" -ne 0 ]]; then
   pass "curl probe fails when nothing listens on the port"
 else
   fail "curl probe should fail when port is down"
+fi
+
+echo "==> fyrst-cli post-deploy health (DEPLOY_HEALTH_URL / APP_URL default)"
+set +e
+rel_help="$(fyrst-cli shopware deploy release --help 2>&1)"
+rel_help_rc=$?
+set -e
+if fyrst_cli_has_deploy_health; then
+  if [[ "$rel_help_rc" -eq 0 ]] && printf '%s' "$rel_help" | grep -q -- '--allow-no-deploy-health'; then
+    pass "deploy release --help documents --allow-no-deploy-health"
+  else
+    fail "deploy release --help missing --allow-no-deploy-health rc=$rel_help_rc out=$rel_help"
+  fi
+  LIVE_NO_URL="$TMP/live-no-health"
+  write_stub_compose "$LIVE_NO_URL"
+  cat >"$LIVE_NO_URL/.env" <<'EOF'
+IMAGE=ghcr.io/example/acme
+IMAGE_TAG=tag-b
+SHOPWARE_SHOP_ID=acme
+APP_URL=
+EOF
+  printf 'SHOPWARE_DEPLOY_ENV=live\n' >"$LIVE_NO_URL/.env.local"
+  : >"$LIVE_NO_URL/.env.prod"
+  set +e
+  out="$(cd "$LIVE_NO_URL" && fyrst-cli shopware deploy release --dry-run 2>&1)"
+  rc=$?
+  set -e
+  if [[ "$rc" -ne 0 ]] && printf '%s' "$out" | grep -qiE 'DEPLOY_HEALTH_URL|APP_URL|resolvable|health'; then
+    pass "live dry-run refuses when no resolvable probe URL"
+  else
+    fail "live without probe URL rc=$rc out=$out"
+  fi
+  set +e
+  out="$(cd "$LIVE_NO_URL" && fyrst-cli shopware deploy release --dry-run --allow-no-deploy-health 2>&1)"
+  rc=$?
+  set -e
+  if [[ "$rc" -eq 0 ]] && printf '%s' "$out" | grep -q 'DRY-RUN'; then
+    pass "live --allow-no-deploy-health dry-run proceeds without a probe URL"
+  else
+    fail "live --allow-no-deploy-health rc=$rc out=$out"
+  fi
+  set +e
+  out="$(cd "$LIVE_NO_URL" && ALLOW_NO_DEPLOY_HEALTH=1 fyrst-cli shopware deploy release --dry-run 2>&1)"
+  rc=$?
+  set -e
+  if [[ "$rc" -eq 0 ]] && printf '%s' "$out" | grep -q 'DRY-RUN'; then
+    pass "live ALLOW_NO_DEPLOY_HEALTH=1 dry-run proceeds without a probe URL"
+  else
+    fail "live ALLOW_NO_DEPLOY_HEALTH=1 rc=$rc out=$out"
+  fi
+  set +e
+  out="$(cd "$SHOP" && fyrst-cli shopware deploy release --dry-run 2>&1)"
+  rc=$?
+  set -e
+  if [[ "$rc" -eq 0 ]] && printf '%s' "$out" | grep -q 'https://shop.example/api/_info/health-check'; then
+    pass "live dry-run default probe is APP_URL + /api/_info/health-check"
+  else
+    fail "live APP_URL default probe rc=$rc out=$out"
+  fi
+  set +e
+  out="$(cd "$SHOP" && DEPLOY_HEALTH_URL=http://127.0.0.1:18080/api/_info/health-check fyrst-cli shopware deploy release --dry-run 2>&1)"
+  rc=$?
+  set -e
+  if [[ "$rc" -eq 0 ]] && printf '%s' "$out" | grep -q 'http://127.0.0.1:18080/api/_info/health-check' \
+    && ! printf '%s' "$out" | grep -q 'https://shop.example/api/_info/health-check'; then
+    pass "DEPLOY_HEALTH_URL override is used as-is"
+  else
+    fail "DEPLOY_HEALTH_URL override rc=$rc out=$out"
+  fi
+  set +e
+  out="$(cd "$SHOP" && SMOKE_URL=http://127.0.0.1:9/legacy fyrst-cli shopware deploy release --dry-run 2>&1)"
+  rc=$?
+  set -e
+  if [[ "$rc" -eq 0 ]] && printf '%s' "$out" | grep -q 'http://127.0.0.1:9/legacy' \
+    && printf '%s' "$out" | grep -qiE 'deprecated|DEPLOY_HEALTH_URL'; then
+    pass "SMOKE_URL still probes but is documented as a deprecated alias"
+  else
+    fail "SMOKE_URL alias rc=$rc out=$out"
+  fi
+  STAGING_NO_URL="$TMP/staging-no-health"
+  write_stub_compose "$STAGING_NO_URL"
+  cat >"$STAGING_NO_URL/.env" <<'EOF'
+IMAGE=ghcr.io/example/acme
+IMAGE_TAG=tag-b
+SHOPWARE_SHOP_ID=acme
+APP_URL=
+EOF
+  printf 'SHOPWARE_DEPLOY_ENV=staging\n' >"$STAGING_NO_URL/.env.local"
+  : >"$STAGING_NO_URL/.env.prod"
+  set +e
+  out="$(cd "$STAGING_NO_URL" && fyrst-cli shopware deploy release --dry-run 2>&1)"
+  rc=$?
+  set -e
+  if [[ "$rc" -eq 0 ]] && printf '%s' "$out" | grep -q 'DRY-RUN'; then
+    pass "non-live dry-run is optional when no probe URL can be resolved"
+  else
+    fail "staging without probe URL rc=$rc out=$out"
+  fi
+else
+  echo "==> skipping fyrst-cli DEPLOY_HEALTH_URL behaviour (CLI help has no --allow-no-deploy-health yet)"
+  if [[ "$rel_help_rc" -eq 0 ]]; then
+    pass "deploy release --help still works (health flag lands in parallel CLI)"
+  else
+    fail "deploy release --help rc=$rel_help_rc out=$rel_help"
+  fi
 fi
 
 echo "==> live Compose profiles warning (#18)"
