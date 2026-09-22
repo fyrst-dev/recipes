@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Rewrite stays fyrst:sales-channel:rewrite-urls (shopware-cd package).
+# Sync runs Shopware sales-channel:update:domain (host from APP_URL). Skipped on live.
 # Recipe does not rewrite in bash; fyrst-cli shopware sync apply owns the path.
 #   bash fyrst/shopware-cd/1.0/tests/sync-rewrite.test.sh
 
@@ -18,10 +18,10 @@ else
   pass "lib/sync-rewrite.sh is gone"
 fi
 
-echo "==> docs keep APP_URL rewrite + live refuse"
+echo "==> docs keep native domain update + empty bundle"
 for needle in \
   'APP_URL' \
-  'fyrst:sales-channel:rewrite-urls' \
+  'sales-channel:update:domain' \
   'FyrstShopwareCdBundle'
 do
   if grep -q "$needle" "$ROOT/post-install.txt" \
@@ -32,11 +32,16 @@ do
   fi
 done
 
-if grep -q 'FyrstShopwareCdBundle' "$ROOT/post-install.txt" \
-  && grep -q 'fyrst:sales-channel:rewrite-urls' "$ROOT/post-install.txt"; then
-  pass "post-install still points at the console command"
+if grep -q 'fyrst:sales-channel:rewrite-urls' "$ROOT/post-install.txt" \
+  || grep -q 'fyrst:sales-channel:rewrite-urls' "$ROOT/README.md"; then
+  fail "docs still name fyrst:sales-channel:rewrite-urls"
+elif grep -q 'sales-channel:update:domain' "$ROOT/post-install.txt" \
+  && grep -q 'sales-channel:update:domain' "$ROOT/README.md" \
+  && grep -q 'Skipped on live' "$ROOT/post-install.txt" \
+  && grep -q 'Skipped on live' "$ROOT/README.md"; then
+  pass "docs point at sales-channel:update:domain and skip on live"
 else
-  fail "post-install dropped rewrite command"
+  fail "docs dropped native domain update or live skip"
 fi
 
 echo "==> apply is the rewrite path (fyrst-cli)"

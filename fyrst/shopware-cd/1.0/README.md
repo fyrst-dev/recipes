@@ -35,4 +35,4 @@ Local `shopware-cli project dev` pull (rsync path remap, no DB): `fyrst-cli shop
 
 Managed host deploy (`deploy/managed/`) is **planned / not implemented**. Compose/VPS is the only supported last mile.
 
-After package overlay changes, shops run `composer update fyrst/shopware-cd` then `composer recipes:update fyrst/shopware-cd` and merge new `.env.example` keys. Flex `bundles` writes `Fyrst\ShopwareCd\FyrstShopwareCdBundle` into `config/bundles.php` (needed for `bin/console fyrst:sales-channel:rewrite-urls`).
+After package overlay changes, shops run `composer update fyrst/shopware-cd` then `composer recipes:update fyrst/shopware-cd` and merge new `.env.example` keys. Flex `bundles` may keep registering the empty `Fyrst\ShopwareCd\FyrstShopwareCdBundle` in `config/bundles.php`. The bundle is no longer required for a fyrst console command. Sync runs `bin/console sales-channel:update:domain <host>` where `<host>` comes from `APP_URL`. Skipped on live.

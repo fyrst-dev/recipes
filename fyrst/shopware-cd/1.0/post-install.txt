@@ -156,19 +156,20 @@
     <comment>.gitlab-ci.yml</comment>: set Settings → CI/CD → CI/CD configuration file
     to <comment>.gitlab-ci.yaml</comment> (or copy/symlink that name).
 
-    Flex registers
+    Flex may keep registering the empty
     <comment>Fyrst\ShopwareCd\FyrstShopwareCdBundle</comment>
     in <comment>config/bundles.php</comment>.
-    Post-restore sales-channel URL rewrite uses
-    <comment>APP_URL</comment> in shop-root <comment>.env</comment>;
-    sync calls
-    <comment>bin/console fyrst:sales-channel:rewrite-urls</comment>.
+    The bundle is no longer required for a fyrst console command.
+    Sync runs
+    <comment>bin/console sales-channel:update:domain</comment>
+    with the host from <comment>APP_URL</comment>.
+    Skipped on live.
     Laptop SSH (<comment>SHOPWARE_SSH_*</comment>), host
     <comment>SHOPWARE_DEPLOY_ENV</comment>, and
     <comment>COMPOSE_PROJECT_NAME</comment> belong in
     <comment>.env.local</comment>.
     Shops need <comment>composer update fyrst/shopware-cd</comment>
-    so the command and bundle exist, then
+    for overlay files, then
     <comment>composer recipes:update fyrst/shopware-cd</comment>.
 
     Refresh later with <comment>composer recipes:update fyrst/shopware-cd</comment>.
